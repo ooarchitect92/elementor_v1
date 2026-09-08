@@ -1,0 +1,12 @@
+.git
+**/node_modules
+**/.env
+**/.env.*
+!**/.env.example
+**/dist
+**/build
+**/coverage
+**/uploads
+**/*.log
+backend/create-user.ts
+.foundation

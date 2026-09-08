@@ -1,0 +1,295 @@
+{
+  "plan": "v2.0",
+  "milestone": "team-foundation-0.1",
+  "note": "No work package is certified complete by this scaffold.",
+  "packages": [
+    {
+      "id": "F01",
+      "priority": "P0",
+      "title": "Reproducible build, route/schema inventory and feature truth audit",
+      "dependencies_and_owner": "Start; tech lead + QA",
+      "acceptance": "Baseline runs; simulations cataloged.",
+      "status": "foundation_started"
+    },
+    {
+      "id": "F02",
+      "priority": "P0",
+      "title": "Tenant/membership model and scoped authorization",
+      "dependencies_and_owner": "F01; backend + security",
+      "acceptance": "Cross-tenant tests pass.",
+      "status": "foundation_started"
+    },
+    {
+      "id": "F03",
+      "priority": "P0",
+      "title": "Save contract, server revisions and conflict handling",
+      "dependencies_and_owner": "F01\u2013F02; editor + backend",
+      "acceptance": "Complete round-trip and crash tests.",
+      "status": "planned"
+    },
+    {
+      "id": "F04",
+      "priority": "P0",
+      "title": "Origin isolation, SSRF and secret-management foundation",
+      "dependencies_and_owner": "F01; security + platform",
+      "acceptance": "Threat tests and revoked-secret checks.",
+      "status": "foundation_started"
+    },
+    {
+      "id": "F05",
+      "priority": "P0",
+      "title": "Docker images and local/full integration environments",
+      "dependencies_and_owner": "F01; platform",
+      "acceptance": "Clean checkout builds and starts reproducibly.",
+      "status": "foundation_started"
+    },
+    {
+      "id": "F06",
+      "priority": "P0",
+      "title": "Durable jobs, outbox, inbox and idempotency contracts",
+      "dependencies_and_owner": "F02; backend",
+      "acceptance": "Crash-window and duplicate tests.",
+      "status": "foundation_started"
+    },
+    {
+      "id": "F07",
+      "priority": "P0",
+      "title": "RabbitMQ quorum dispatch and recovery scheduler",
+      "dependencies_and_owner": "F05\u2013F06; platform + backend",
+      "acceptance": "No lost database-backed job after restart.",
+      "status": "foundation_started"
+    },
+    {
+      "id": "F08",
+      "priority": "P0",
+      "title": "Redis cache/session/limiter implementation",
+      "dependencies_and_owner": "F02,F05; backend",
+      "acceptance": "Failover and cold-cache tests.",
+      "status": "foundation_started"
+    },
+    {
+      "id": "F09",
+      "priority": "P1",
+      "title": "WordPress plugin pairing and capability manifest",
+      "dependencies_and_owner": "F02,F04\u2013F07; WP engineer",
+      "acceptance": "Read-only authorized connection and revocation.",
+      "status": "foundation_started"
+    },
+    {
+      "id": "F10",
+      "priority": "P1",
+      "title": "Core WordPress content import into drafts",
+      "dependencies_and_owner": "F03,F09; WP + editor",
+      "acceptance": "Counts, mapping and no production overwrite.",
+      "status": "planned"
+    },
+    {
+      "id": "F11",
+      "priority": "P1",
+      "title": "Pilot templates and controlled publish compiler",
+      "dependencies_and_owner": "F03\u2013F07; editor + platform",
+      "acceptance": "Verified artifact manifest and preview.",
+      "status": "planned"
+    },
+    {
+      "id": "F12",
+      "priority": "P1",
+      "title": "Independent edge delivery and domain workflow",
+      "dependencies_and_owner": "F11; platform",
+      "acceptance": "Published site survives builder outage.",
+      "status": "planned"
+    },
+    {
+      "id": "P01",
+      "priority": "P1",
+      "title": "Native WP apply endpoint, mappings and conflict UI",
+      "dependencies_and_owner": "F09\u2013F11; WP + backend",
+      "acceptance": "Idempotent apply and direct-edit conflicts.",
+      "status": "planned"
+    },
+    {
+      "id": "P02",
+      "priority": "P1",
+      "title": "Release approvals, evidence packet and rollback",
+      "dependencies_and_owner": "F11\u2013F12; backend + UX",
+      "acceptance": "Exact revision approval; failed publish safe.",
+      "status": "planned"
+    },
+    {
+      "id": "P03",
+      "priority": "P1",
+      "title": "Lead persistence and delivery ledger",
+      "dependencies_and_owner": "F06\u2013F07,F12; backend",
+      "acceptance": "No fake success; unknown outcomes shown.",
+      "status": "planned"
+    },
+    {
+      "id": "P04",
+      "priority": "P1",
+      "title": "One CRM + email + signed webhooks",
+      "dependencies_and_owner": "P03,F04; integrations",
+      "acceptance": "Provider sandbox tests and reconciliation.",
+      "status": "planned"
+    },
+    {
+      "id": "P05",
+      "priority": "P1",
+      "title": "Kafka topics, registry, relays and projections",
+      "dependencies_and_owner": "F05\u2013F06; data/platform",
+      "acceptance": "Replay and independent reporting consumer.",
+      "status": "foundation_started"
+    },
+    {
+      "id": "P06",
+      "priority": "P1",
+      "title": "Tenant subscription, usage ledger and quotas",
+      "dependencies_and_owner": "F02,F06; backend",
+      "acceptance": "Duplicate billing events and quota races.",
+      "status": "planned"
+    },
+    {
+      "id": "P07",
+      "priority": "P1",
+      "title": "Client review portal and scoped agency access",
+      "dependencies_and_owner": "F02,P02; frontend",
+      "acceptance": "Assigned client access only.",
+      "status": "planned"
+    },
+    {
+      "id": "P08",
+      "priority": "P1",
+      "title": "Supported portable package and clean re-import",
+      "dependencies_and_owner": "F03,F11; editor",
+      "acceptance": "Documented fidelity and limitations.",
+      "status": "planned"
+    },
+    {
+      "id": "P09",
+      "priority": "P1",
+      "title": "WordPress compatibility/migration test corpus",
+      "dependencies_and_owner": "P01\u2013P04; WP + QA",
+      "acceptance": "Version/mode-specific certification report.",
+      "status": "planned"
+    },
+    {
+      "id": "P10",
+      "priority": "P1",
+      "title": "Operations center, alerts and business synthetics",
+      "dependencies_and_owner": "F06,P02\u2013P05; SRE + frontend",
+      "acceptance": "Job, sync and lead timelines are truthful.",
+      "status": "planned"
+    },
+    {
+      "id": "P11",
+      "priority": "P1",
+      "title": "Security review, restore drill and paid-pilot gate",
+      "dependencies_and_owner": "P01\u2013P10; security + QA",
+      "acceptance": "Blocking findings closed; recovery proven.",
+      "status": "planned"
+    },
+    {
+      "id": "P12",
+      "priority": "P1",
+      "title": "Design-partner onboarding and paid validation",
+      "dependencies_and_owner": "P11; product + partnerships",
+      "acceptance": "Activation, retention, support and paid evidence.",
+      "status": "planned"
+    },
+    {
+      "id": "G01",
+      "priority": "P2",
+      "title": "Selected Gutenberg / Elementor adapters",
+      "dependencies_and_owner": "P08\u2013P09; WP + editor",
+      "acceptance": "Certified widgets; source preserved.",
+      "status": "planned"
+    },
+    {
+      "id": "G02",
+      "priority": "P2",
+      "title": "CMS localization and content dependencies",
+      "dependencies_and_owner": "F03,P05; editor/backend",
+      "acceptance": "Locale routes and schema migrations.",
+      "status": "planned"
+    },
+    {
+      "id": "G03",
+      "priority": "P2",
+      "title": "Agency fleet blueprints and canary rollouts",
+      "dependencies_and_owner": "P02,P07; product/engineering",
+      "acceptance": "Diff, cohort controls and rollback.",
+      "status": "planned"
+    },
+    {
+      "id": "G04",
+      "priority": "P2",
+      "title": "White-label portal and reseller operations",
+      "dependencies_and_owner": "P06\u2013P07; frontend/backend",
+      "acceptance": "Domain, email and access separation.",
+      "status": "planned"
+    },
+    {
+      "id": "G05",
+      "priority": "P2",
+      "title": "WooCommerce adapter and native checkout path",
+      "dependencies_and_owner": "P01,P09; commerce/WP",
+      "acceptance": "Order/stock authority and private caching tests.",
+      "status": "planned"
+    },
+    {
+      "id": "G06",
+      "priority": "P2",
+      "title": "AI proposals and consent-aware analytics",
+      "dependencies_and_owner": "P02,P05; AI/data",
+      "acceptance": "Budget, isolation and evaluation gates.",
+      "status": "planned"
+    },
+    {
+      "id": "G07",
+      "priority": "P2",
+      "title": "Curated SDK / adapter marketplace",
+      "dependencies_and_owner": "P04,P09; ecosystem/security",
+      "acceptance": "Signed reviewable packages and revocation.",
+      "status": "planned"
+    },
+    {
+      "id": "G08",
+      "priority": "P2",
+      "title": "Optional managed WordPress hosting",
+      "dependencies_and_owner": "P09\u2013P11; platform/WP",
+      "acceptance": "Per-site isolation and restore service.",
+      "status": "planned"
+    },
+    {
+      "id": "S01",
+      "priority": "P3",
+      "title": "Multi-cell placement and tenant migration",
+      "dependencies_and_owner": "Proven one-cell load; platform",
+      "acceptance": "Fenced migration and hotspot isolation.",
+      "status": "planned"
+    },
+    {
+      "id": "S02",
+      "priority": "P3",
+      "title": "Multi-region recovery and delivery options",
+      "dependencies_and_owner": "S01; SRE/platform",
+      "acceptance": "Regional failover and broker-state reconciliation.",
+      "status": "planned"
+    },
+    {
+      "id": "S03",
+      "priority": "P3",
+      "title": "Enterprise identity and dedicated capacity",
+      "dependencies_and_owner": "F02,S01; security/backend",
+      "acceptance": "SSO/SCIM lifecycle and contractual controls.",
+      "status": "planned"
+    },
+    {
+      "id": "S04",
+      "priority": "P3",
+      "title": "Ten-billion-envelope capacity certification",
+      "dependencies_and_owner": "S01\u2013S03; performance/SRE",
+      "acceptance": "Measured cardinality, workload, cost and failure envelope.",
+      "status": "planned"
+    }
+  ]
+}

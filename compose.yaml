@@ -1,0 +1,155 @@
+# Development fixtures only. No service is exposed on a public host interface.
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:17-alpine}
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-forgestudio}
+      POSTGRES_USER: ${POSTGRES_USER:-forgestudio}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run npm run bootstrap}
+    ports: ["127.0.0.1:${POSTGRES_PORT:-5432}:5432"]
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./infrastructure/postgres/001_platform.sql:/docker-entrypoint-initdb.d/001_platform.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+  redis-cache:
+    image: ${REDIS_IMAGE:-redis:7.4-alpine}
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Run npm run bootstrap}
+    command: ["sh", "-c", "exec redis-server --requirepass \"$$REDIS_PASSWORD\" --maxmemory 128mb --maxmemory-policy allkeys-lru --save '' --appendonly no"]
+    ports: ["127.0.0.1:${REDIS_CACHE_PORT:-6379}:6379"]
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=$$REDIS_PASSWORD redis-cli ping | grep PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+  redis-control:
+    image: ${REDIS_IMAGE:-redis:7.4-alpine}
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Run npm run bootstrap}
+    command: ["sh", "-c", "exec redis-server --requirepass \"$$REDIS_PASSWORD\" --maxmemory 64mb --maxmemory-policy noeviction --appendonly yes"]
+    ports: ["127.0.0.1:${REDIS_CONTROL_PORT:-6380}:6379"]
+    volumes: ["redis-control-data:/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=$$REDIS_PASSWORD redis-cli ping | grep PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+  rabbitmq:
+    image: ${RABBITMQ_IMAGE:-rabbitmq:4.1-management-alpine}
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-forgestudio}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?Run npm run bootstrap}
+    ports:
+      - "127.0.0.1:${RABBITMQ_PORT:-5672}:5672"
+      - "127.0.0.1:${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+      - ./infrastructure/rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+  kafka:
+    profiles: ["analytics"]
+    image: ${KAFKA_IMAGE:-apache/kafka:4.0.0}
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: INTERNAL://:9092,CONTROLLER://:9093,EXTERNAL://:9094
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,EXTERNAL://localhost:${KAFKA_PORT:-9094}
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_MIN_INSYNC_REPLICAS: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_UNCLEAN_LEADER_ELECTION_ENABLE: "false"
+      KAFKA_LOG_RETENTION_HOURS: 168
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+    ports: ["127.0.0.1:${KAFKA_PORT:-9094}:9094"]
+    volumes: ["kafka-data:/var/lib/kafka/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 30s
+    restart: unless-stopped
+  wordpress-db:
+    profiles: ["wordpress"]
+    image: ${MARIADB_IMAGE:-mariadb:11.4}
+    environment:
+      MARIADB_DATABASE: wordpress
+      MARIADB_USER: wordpress
+      MARIADB_PASSWORD: ${WORDPRESS_DB_PASSWORD:?Run npm run bootstrap}
+      MARIADB_ROOT_PASSWORD: ${WORDPRESS_DB_ROOT_PASSWORD:?Run npm run bootstrap}
+    volumes: ["wordpress-db-data:/var/lib/mysql"]
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+  wordpress:
+    profiles: ["wordpress"]
+    image: ${WORDPRESS_IMAGE:-wordpress:6-php8.3-apache}
+    depends_on:
+      wordpress-db: {condition: service_healthy}
+    environment:
+      WORDPRESS_DB_HOST: wordpress-db
+      WORDPRESS_DB_NAME: wordpress
+      WORDPRESS_DB_USER: wordpress
+      WORDPRESS_DB_PASSWORD: ${WORDPRESS_DB_PASSWORD:?Run npm run bootstrap}
+      WORDPRESS_CONFIG_EXTRA: "define('WP_ENVIRONMENT_TYPE', 'local');"
+    ports: ["127.0.0.1:${WORDPRESS_PORT:-8081}:80"]
+    volumes:
+      - wordpress-data:/var/www/html
+      - ./wordpress-plugin/forgestudio-connect:/var/www/html/wp-content/plugins/forgestudio-connect:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f -s -o /dev/null http://localhost/wp-login.php"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+  api:
+    profiles: ["legacy-app"]
+    build: {context: ., dockerfile: infrastructure/docker/api.Dockerfile}
+    depends_on:
+      postgres: {condition: service_healthy}
+    env_file: ./backend/.env
+    environment:
+      NODE_ENV: development
+      PORT: 5000
+      ENABLE_LEGACY_SCHEDULER: "false"
+    ports: ["127.0.0.1:5000:5000"]
+    read_only: true
+    tmpfs: ["/tmp"]
+    volumes: ["legacy-uploads:/app/backend/uploads"]
+    init: true
+    security_opt: ["no-new-privileges:true"]
+  frontend:
+    profiles: ["legacy-app"]
+    build: {context: ., dockerfile: infrastructure/docker/frontend.Dockerfile}
+    ports: ["127.0.0.1:5173:8080"]
+    read_only: true
+    tmpfs: ["/tmp", "/var/cache/nginx", "/var/run"]
+    security_opt: ["no-new-privileges:true"]
+volumes:
+  postgres-data:
+  redis-control-data:
+  rabbitmq-data:
+  kafka-data:
+  wordpress-db-data:
+  wordpress-data:
+  legacy-uploads:

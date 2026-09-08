@@ -23,52 +23,7 @@ export function sanitizeCategory(cat?: string): string {
   return match || "Other";
 }
 
-/**
- * Ensure templates table exists in PostgreSQL and has category, isFavorite, isShared, and shareToken columns
- */
-export async function initTemplateTable() {
-  try {
-    await prisma.$executeRawUnsafe(`
-      CREATE TABLE IF NOT EXISTS templates (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        "userId" UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-        name VARCHAR(255) NOT NULL,
-        description TEXT,
-        type VARCHAR(50) NOT NULL DEFAULT 'PAGE',
-        category VARCHAR(100) NOT NULL DEFAULT 'Other',
-        "isFavorite" BOOLEAN NOT NULL DEFAULT FALSE,
-        "isShared" BOOLEAN NOT NULL DEFAULT FALSE,
-        "shareToken" VARCHAR(255),
-        "templateData" JSONB NOT NULL DEFAULT '{"elements":[],"pageSettings":{}}'::jsonb,
-        "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-        "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
-      );
-    `);
-    await prisma.$executeRawUnsafe(`
-      ALTER TABLE templates ADD COLUMN IF NOT EXISTS category VARCHAR(100) NOT NULL DEFAULT 'Other';
-    `);
-    await prisma.$executeRawUnsafe(`
-      ALTER TABLE templates ADD COLUMN IF NOT EXISTS "isFavorite" BOOLEAN NOT NULL DEFAULT FALSE;
-    `);
-    await prisma.$executeRawUnsafe(`
-      ALTER TABLE templates ADD COLUMN IF NOT EXISTS "isShared" BOOLEAN NOT NULL DEFAULT FALSE;
-    `);
-    await prisma.$executeRawUnsafe(`
-      ALTER TABLE templates ADD COLUMN IF NOT EXISTS "shareToken" VARCHAR(255);
-    `);
-    await prisma.$executeRawUnsafe(`
-      CREATE INDEX IF NOT EXISTS idx_templates_user_id ON templates("userId");
-    `);
-    await prisma.$executeRawUnsafe(`
-      CREATE INDEX IF NOT EXISTS idx_templates_share_token ON templates("shareToken");
-    `);
-  } catch (error) {
-    console.error("Template table initialization log:", error);
-  }
-}
-
-// Auto-run initialization
-initTemplateTable();
+// Table DDL is applied explicitly from backend/prisma/manual/002_legacy_content.sql.
 
 export interface CreateTemplateParams {
   name: string;

@@ -38,3 +38,8 @@ Thumbs.db
 *.key
 *.p12
 *.pfx
+
+# Team foundation generated artifacts
+/.foundation/
+/coverage/
+*.tsbuildinfo

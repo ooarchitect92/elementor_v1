@@ -37,5 +37,7 @@ export function startScheduler() {
     // Run at startup
     processScheduledPublications();
     // Re-run periodically
-    setInterval(processScheduledPublications, POLL_INTERVAL_MS);
+    const timer = setInterval(processScheduledPublications, POLL_INTERVAL_MS);
+    timer.unref();
+    return () => clearInterval(timer);
 }

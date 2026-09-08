@@ -30,7 +30,13 @@ import {
 
 import { errorMiddleware } from "./middlewares/error.middleware.js";
 
+import { prisma } from "./config/prisma.js";
+import { requestContext, liveness, readiness } from "./platform/health.js";
+
 const app = express();
+app.use(requestContext);
+app.get("/api/v1/health/live", liveness);
+app.get("/api/v1/health/ready", readiness(() => prisma.$queryRaw`SELECT 1`));
 
 // =========================
 // Security & Static Files
