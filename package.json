@@ -1,0 +1,28 @@
+{
+  "name": "forgestudio-foundation",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.16.0 <23"
+  },
+  "scripts": {
+    "bootstrap": "node scripts/bootstrap.mjs",
+    "test": "node --experimental-strip-types --test tests/foundation/*.test.mjs",
+    "typecheck": "tsc -p tsconfig.foundation.json",
+    "check": "npm run typecheck && npm run build:foundation && npm test && node scripts/check-foundation.mjs",
+    "inventory": "node scripts/inventory.mjs",
+    "infra:up": "docker compose up -d --wait",
+    "infra:full": "docker compose --profile analytics --profile wordpress up -d --wait",
+    "infra:init": "node --env-file=.env scripts/init-infrastructure.mjs",
+    "infra:down": "docker compose down",
+    "infra:smoke": "node --env-file=.env scripts/smoke-infrastructure.mjs",
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "build:foundation": "tsc -p tsconfig.foundation.build.json",
+    "status": "node scripts/status.mjs"
+  },
+  "devDependencies": {
+    "typescript": "5.8.3"
+  }
+}

@@ -6,33 +6,7 @@ import { canUserAccessResource } from "./permission.service.js";
 
 const db = prisma as any;
 
-/**
- * Ensure websites table exists in PostgreSQL
- */
-export async function initWebsiteTable() {
-  try {
-    await prisma.$executeRawUnsafe(`
-      CREATE TABLE IF NOT EXISTS websites (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        "userId" UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-        name VARCHAR(255) NOT NULL,
-        slug VARCHAR(255) NOT NULL,
-        status VARCHAR(50) NOT NULL DEFAULT 'DRAFT',
-        "editorData" JSONB NOT NULL DEFAULT '{"version":1,"elements":[]}'::jsonb,
-        "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-        "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
-      );
-    `);
-    await prisma.$executeRawUnsafe(`
-      CREATE INDEX IF NOT EXISTS idx_websites_user_id ON websites("userId");
-    `);
-  } catch (error) {
-    console.error("Website table initialization log:", error);
-  }
-}
-
-// Auto-run initialization
-initWebsiteTable();
+// Table DDL is applied explicitly from backend/prisma/manual/002_legacy_content.sql.
 
 function generateSlug(name: string): string {
   const baseSlug = name

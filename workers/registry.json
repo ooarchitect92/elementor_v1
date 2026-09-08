@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "enabled": false,
+  "leaseRecoveryImplemented": false,
+  "handlers": [],
+  "reason": "Foundation ports only; domain workers and reconciliation must pass integration gates before activation."
+}

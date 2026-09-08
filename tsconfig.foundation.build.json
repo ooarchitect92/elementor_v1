@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.foundation.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "rewriteRelativeImportExtensions": true,
+    "declaration": true,
+    "outDir": ".foundation/build",
+    "rootDir": "."
+  }
+}

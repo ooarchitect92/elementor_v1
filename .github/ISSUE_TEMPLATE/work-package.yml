@@ -1,0 +1,27 @@
+name: Work package
+description: Implement a bounded approved-plan work package
+title: "[F00] Work package title"
+body:
+  - type: input
+    id: package
+    attributes:
+      label: Plan work-package ID
+      placeholder: F02
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope and non-goals
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance tests and evidence
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies, migration and rollout

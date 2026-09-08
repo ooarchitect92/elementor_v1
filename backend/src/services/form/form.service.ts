@@ -5,35 +5,7 @@ import { getWebsiteById } from "../website.service.js";
 // In-memory rate limiting map: ip -> timestamps[]
 const rateLimitMap = new Map<string, number[]>();
 
-/**
- * Ensure form_submissions table exists in PostgreSQL
- */
-export async function initFormSubmissionsTable() {
-  try {
-    await prisma.$executeRawUnsafe(`
-      CREATE TABLE IF NOT EXISTS form_submissions (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        "websiteId" UUID NOT NULL REFERENCES websites(id) ON DELETE CASCADE,
-        "formId" VARCHAR(255) NOT NULL,
-        "formName" VARCHAR(255) NOT NULL,
-        data JSONB NOT NULL DEFAULT '{}'::jsonb,
-        metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
-        "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
-      );
-    `);
-    await prisma.$executeRawUnsafe(`
-      CREATE INDEX IF NOT EXISTS idx_form_submissions_website_id ON form_submissions("websiteId");
-    `);
-    await prisma.$executeRawUnsafe(`
-      CREATE INDEX IF NOT EXISTS idx_form_submissions_form_id ON form_submissions("formId");
-    `);
-  } catch (error) {
-    console.error("Form submissions table initialization log:", error);
-  }
-}
-
-// Auto-run table initialization
-initFormSubmissionsTable();
+// Table DDL is applied explicitly from backend/prisma/manual/002_legacy_content.sql.
 
 /**
  * XSS & HTML string sanitization

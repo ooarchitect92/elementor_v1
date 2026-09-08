@@ -1,0 +1,33 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "ForgeStudio foundation probes",
+    "version": "0.1.0",
+    "description": "Only implemented legacy API probes are listed. Job/publish/WP pairing APIs are future work."
+  },
+  "paths": {
+    "/api/v1/health/live": {
+      "get": {
+        "operationId": "getLiveness",
+        "responses": {
+          "200": {
+            "description": "API process is alive; does not certify dependencies."
+          }
+        }
+      }
+    },
+    "/api/v1/health/ready": {
+      "get": {
+        "operationId": "getReadiness",
+        "responses": {
+          "200": {
+            "description": "PostgreSQL probe completed."
+          },
+          "503": {
+            "description": "PostgreSQL unavailable or probe deadline exceeded."
+          }
+        }
+      }
+    }
+  }
+}
