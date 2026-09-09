@@ -17,6 +17,7 @@
     "infra:init": "node --env-file=.env scripts/init-infrastructure.mjs",
     "infra:down": "docker compose down",
     "infra:smoke": "node --env-file=.env scripts/smoke-infrastructure.mjs",
+    "core:smoke": "node scripts/smoke-core-v1.mjs",
     "dev:backend": "npm --prefix backend run dev",
     "dev:frontend": "npm --prefix frontend run dev",
     "build:foundation": "tsc -p tsconfig.foundation.build.json",
