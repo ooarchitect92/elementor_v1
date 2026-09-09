@@ -195,12 +195,14 @@ function option(
 }
 
 export class PgJobStore implements JobStore {
+  private readonly pool: SqlPool;
   private readonly leaseMs: number;
 
   constructor(
-    private readonly pool: SqlPool,
+    pool: SqlPool,
     options: PgStoreOptions = {},
   ) {
+    this.pool = pool;
     this.leaseMs = option(options.jobLeaseMs, 60_000, 1_000, 15 * 60_000, "INVALID_JOB_LEASE");
   }
 
@@ -551,15 +553,17 @@ export class PgJobStore implements JobStore {
 }
 
 export class PgOutboxStore implements OutboxStore {
+  private readonly pool: SqlPool;
   private readonly tenantId: string;
   private readonly leaseMs: number;
   private readonly maxAttempts: number;
 
   constructor(
-    private readonly pool: SqlPool,
+    pool: SqlPool,
     tenantId: string,
     options: PgStoreOptions = {},
   ) {
+    this.pool = pool;
     this.tenantId = uuid(tenantId);
     this.leaseMs = option(
       options.outboxLeaseMs,

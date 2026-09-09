@@ -9,7 +9,11 @@ import {
 
 
 class PostgresConnection implements SqlConnection {
-  constructor(private readonly client: PoolClient) {}
+  private readonly client: PoolClient;
+
+  constructor(client: PoolClient) {
+    this.client = client;
+  }
 
   async query<T = Record<string, unknown>>(
     sql: string,
