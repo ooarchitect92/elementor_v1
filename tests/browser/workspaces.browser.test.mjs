@@ -137,7 +137,9 @@ after(async () => {
   socket?.close();
   if (chrome && chrome.exitCode === null) { chrome.kill('SIGTERM'); await Promise.race([new Promise(resolve => chrome.once('close', resolve)), pause(3000)]); if (chrome.exitCode === null) chrome.kill('SIGKILL'); }
   for (const server of [webServer, apiServer]) if (server?.listening) { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
-  if (profile) await rm(profile, { recursive: true, force: true });
+  // Chrome child processes can finish profile writes just after the parent exits.
+  // Retry bounded ENOTEMPTY/EBUSY cleanup errors; still fail if cleanup cannot finish.
+  if (profile) await rm(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 });
 afterEach(() => { assert.deepEqual(runtimeErrors.splice(0), [], 'Unexpected browser runtime errors'); });
 let navigation = 0;
@@ -150,7 +152,7 @@ async function open(path = '/workspaces', clean = true) {
 async function ready() { await browser.wait("!!document.querySelector('#workspace-list-heading') && !document.body.innerText.includes('Loading workspaces…')"); }
 const hasText = text => `document.body.innerText.includes(${JSON.stringify(text)})`;
 
-test('browser: existing sidebar opens workspace UI; create, rename, archive and restore call the real client contract', { timeout: 30000 }, async () => {
+test('browser: existing dashboard tab exposes workspace UI; create, rename, archive and restore call the real client contract', { timeout: 30000 }, async () => {
   reset(); await open('/dashboard?tab=workspaces'); await ready();
   assert.equal(await browser.evaluate("[...document.querySelectorAll('aside button')].some(e=>e.textContent.includes('Workspaces'))"), true);
   await browser.value('[name=workspaceName]', 'Marketing'); await browser.value('[name=workspaceSlug]', 'marketing'); await browser.click('Create workspace');
