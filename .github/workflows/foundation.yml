@@ -23,21 +23,25 @@ jobs:
       - run: npm run inventory
   infrastructure:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
-        with: {node-version: '22'}
+        with: {node-version: '22', cache: npm}
+      - run: npm ci --ignore-scripts
       - run: npm run bootstrap
       - run: docker compose --profile analytics --profile wordpress config --quiet
-      - run: docker compose up -d --wait postgres redis-cache redis-control rabbitmq
-      - run: npm run infra:init && npm run infra:smoke && npm run core:smoke
+      - run: docker compose --profile analytics up -d --wait postgres redis-cache redis-control rabbitmq kafka
+      - run: npm run infra:init -- --kafka
+      - run: npm run infra:smoke -- --kafka
+      - run: npm run core:smoke
+      - run: npm run runtime:smoke
       - name: Diagnostic logs on failure
         if: failure()
-        run: docker compose logs --tail=120 postgres redis-cache redis-control rabbitmq
+        run: docker compose --profile analytics logs --tail=160 postgres redis-cache redis-control rabbitmq kafka
       - name: Remove disposable CI fixtures
         if: always()
-        run: docker compose down -v
+        run: docker compose --profile analytics down -v
   legacy-baseline:
     runs-on: ubuntu-latest
     timeout-minutes: 15
