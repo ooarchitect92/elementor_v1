@@ -25,7 +25,8 @@ import {
   componentAccessRoutes,
   templateRoutes,
   formRoutes,
-  integrationRoutes
+  integrationRoutes,
+  tenancyRoutes
 } from "./routes/index.js";
 
 import { errorMiddleware } from "./middlewares/error.middleware.js";
@@ -94,6 +95,11 @@ app.use("/api/auth", authRoutes);
 app.use("/api/v1/auth", oauthRoutes);
 app.use("/api/v1/auth", meRoutes);
 
+// Verified SaaS tenant context. Tenant selectors are accepted only after
+// persisted active membership is resolved from the authenticated session user.
+app.use("/api/v1/tenancy", tenancyRoutes);
+app.use("/api/tenancy", tenancyRoutes);
+
 // Subscriptions
 app.use("/api/v1/subscriptions", subscriptionRoutes);
 app.use("/api/subscriptions", subscriptionRoutes);
@@ -127,6 +133,11 @@ app.use("/api/v1/component-access", componentAccessRoutes);
 app.use("/api/component-access", componentAccessRoutes);
 app.use("/api/v1/templates", templateRoutes);
 app.use("/api/templates", templateRoutes);
+
+// F01 deliberately keeps form/integration routers disconnected here until
+// their public/private trust boundaries are migrated and certified.
+void formRoutes;
+void integrationRoutes;
 
 // Plugins & Integrations
 app.use("/api/v1/plugins", pluginCompatRoutes);
