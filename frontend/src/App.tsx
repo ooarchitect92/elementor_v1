@@ -24,6 +24,8 @@ import CustomEntriesList from "./pages/dashboard/CustomEntriesList";
 import CustomEntryEditor from "./pages/dashboard/CustomEntryEditor";
 import SharedTemplatePreviewPage from "./pages/templates/SharedTemplatePreviewPage";
 
+import WorkspacesPage from "./features/workspaces/WorkspacesPage";
+
 type UserRole = "USER" | "ADMIN" | "SUPER_ADMIN";
 
 interface RoleRouteProps {
@@ -234,6 +236,15 @@ function App() {
             element={
               <RoleRoute allowedRoles={["USER"]}>
                 <UserDashboard />
+              </RoleRoute>
+            }
+          />
+
+          <Route
+            path="/workspaces"
+            element={
+              <RoleRoute allowedRoles={["USER", "ADMIN", "SUPER_ADMIN"]}>
+                <WorkspacesPage />
               </RoleRoute>
             }
           />

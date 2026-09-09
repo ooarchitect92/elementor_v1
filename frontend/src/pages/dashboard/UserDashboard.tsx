@@ -11,6 +11,7 @@ import CustomCodePanel from "./components/CustomCodePanel";
 import AdvancedCodePanel from "./components/AdvancedCodePanel";
 import CustomPostTypesPanel from "./components/CustomPostTypesPanel";
 import PerformancePanel from "./components/PerformancePanel";
+import WorkspacePanel from "../../features/workspaces/WorkspacePanel";
 import { exportWebsiteKitAsJson } from "../../features/templates/utils/websiteKitExport";
 import { ImportWebsiteKitDialog } from "../../features/templates/components/ImportWebsiteKitDialog";
 
@@ -20,6 +21,7 @@ interface Website {
 
 type Tab =
   | "websites"
+  | "workspaces"
   | "developer-api"
   | "plugin-hub"
   | "custom-code"
@@ -38,6 +40,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: "General",
     items: [
       { id: "websites", label: "My Websites", icon: "🌐" },
+      { id: "workspaces", label: "Workspaces", icon: "🏢" },
     ],
   },
   {
@@ -204,6 +207,7 @@ function UserDashboard() {
 
   const renderContent = () => {
     switch (activeTab) {
+      case "workspaces": return <WorkspacePanel />;
       case "developer-api": return <DeveloperApiSettings />;
       case "plugin-hub": return <PluginHub />;
       case "custom-code": return <CustomCodePanel />;
