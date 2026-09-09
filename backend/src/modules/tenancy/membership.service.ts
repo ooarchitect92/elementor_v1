@@ -1,4 +1,5 @@
 import { prisma } from "../../config/prisma.js";
+import type { Prisma } from "../../generated/prisma/index.js";
 
 export type TenantRole = "OWNER" | "ADMIN" | "EDITOR" | "PUBLISHER" | "VIEWER";
 
@@ -34,7 +35,10 @@ function mapMembership(row: MembershipRow): TenantMembership {
   };
 }
 
-async function withVerifiedUserScope<T>(userId: string, work: (tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0]) => Promise<T>): Promise<T> {
+async function withVerifiedUserScope<T>(
+  userId: string,
+  work: (tx: Prisma.TransactionClient) => Promise<T>,
+): Promise<T> {
   return prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT set_config('app.user_id', ${userId}, true)`;
     return work(tx);
