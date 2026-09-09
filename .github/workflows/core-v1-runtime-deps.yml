@@ -1,0 +1,26 @@
+name: Core v1 one-time runtime dependencies
+on:
+  push:
+    branches: [implementation/core-v1]
+    paths: [.github/workflows/core-v1-runtime-deps.yml]
+permissions:
+  contents: write
+jobs:
+  lock:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: implementation/core-v1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: {node-version: '22'}
+      - run: npm install --save redis@^5 amqplib@^0.10 kafkajs@^2 pg@^8
+      - run: npm install --save-dev @types/amqplib@^0.10 @types/pg@^8
+      - name: Commit generated lockfile and remove bootstrap workflow
+        run: |
+          git rm .github/workflows/core-v1-runtime-deps.yml
+          git config user.name "ForgeStudio CI"
+          git config user.email "actions@users.noreply.github.com"
+          git add package.json package-lock.json
+          git commit -m "build(platform): lock Redis RabbitMQ Kafka and Postgres runtime SDKs"
+          git push origin HEAD:implementation/core-v1
