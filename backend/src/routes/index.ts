@@ -23,6 +23,7 @@ import integrationRoutes from "./integration.routes.js";
 import sftpRoutes from "./sftp.routes.js";
 import pluginIntegrationRoutes from "./pluginIntegration.routes.js";
 import multisiteRoutes from "./multisite.routes.js";
+import tenancyRoutes from "./tenancy.routes.js";
 
 const apiRouter = Router();
 
@@ -32,6 +33,7 @@ apiRouter.use("/auth", signupRoutes);
 apiRouter.use("/auth", authRoutes);
 apiRouter.use("/auth", oauthRoutes);
 apiRouter.use("/users", meRoutes);
+apiRouter.use("/tenancy", tenancyRoutes);
 
 // Subscriptions & Payments
 apiRouter.use("/subscriptions", subscriptionRoutes);
@@ -79,3 +81,4 @@ export { default as componentAccessRoutes } from "./componentAccess.routes.js";
 export { default as templateRoutes } from "./template.routes.js";
 export { default as formRoutes } from "./form.routes.js";
 export { default as integrationRoutes } from "./integration.routes.js";
+export { default as tenancyRoutes } from "./tenancy.routes.js";
