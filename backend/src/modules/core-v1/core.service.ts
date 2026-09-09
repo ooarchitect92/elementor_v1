@@ -1,147 +1,16 @@
-import crypto from "crypto";
 import { prisma } from "../../config/prisma.js";
 import { AppError } from "../../utils/app-error.js";
 import { getWebsiteById } from "../../services/website.service.js";
 import { canUserAccessResource } from "../../services/permission.service.js";
+import { contentHash, mergeEditorData } from "./editor-merge.js";
 
 type JsonObject = Record<string, any>;
-
-export interface SaveRevisionInput {
-  expectedRevision: number;
-  requestKey: string;
-  editorData: JsonObject;
-}
-
-function canonicalize(value: any): any {
-  if (Array.isArray(value)) return value.map(canonicalize);
-  if (value && typeof value === "object") {
-    return Object.keys(value).sort().reduce((out: JsonObject, key) => {
-      if (value[key] !== undefined) out[key] = canonicalize(value[key]);
-      return out;
-    }, {});
-  }
-  return value;
-}
-
-export function contentHash(value: any): string {
-  return crypto.createHash("sha256").update(JSON.stringify(canonicalize(value))).digest("hex");
-}
+export interface SaveRevisionInput { expectedRevision: number; requestKey: string; editorData: JsonObject }
 
 function validateRequestKey(requestKey: string) {
   if (!/^[A-Za-z0-9:_-]{16,128}$/.test(requestKey)) {
     throw new AppError("requestKey must be 16-128 URL-safe characters", 400, "INVALID_REQUEST_KEY");
   }
-}
-
-function clone<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value ?? {}));
-}
-
-const CONTENT_FIELDS = ["content", "src", "alt", "href", "title", "caption"] as const;
-
-function mergeElementTree(
-  currentElements: any[],
-  incomingElements: any[],
-  canEditDesign: boolean,
-  isAdmin: boolean,
-  allowedComponentIds: Set<string>
-): any[] {
-  const current = Array.isArray(currentElements) ? currentElements : [];
-  const incoming = Array.isArray(incomingElements) ? incomingElements : [];
-  const currentById = new Map(current.filter(Boolean).map((el: any) => [String(el.id), el]));
-  const incomingById = new Map(incoming.filter(Boolean).map((el: any) => [String(el.id), el]));
-
-  if (!canEditDesign) {
-    return current.map((existing: any) => {
-      const next = incomingById.get(String(existing.id));
-      if (!next) return clone(existing);
-      const merged = clone(existing);
-      for (const field of CONTENT_FIELDS) {
-        if (next[field] !== undefined) merged[field] = clone(next[field]);
-      }
-      if (Array.isArray(existing.children)) {
-        merged.children = mergeElementTree(existing.children, next.children || [], false, isAdmin, allowedComponentIds);
-      }
-      return merged;
-    });
-  }
-
-  const result: any[] = [];
-  for (const next of incoming) {
-    if (!next || next.id === undefined) continue;
-    const previous = currentById.get(String(next.id));
-    const protectedWithoutGrant = previous?.isProtected === true && !isAdmin && !allowedComponentIds.has(String(next.id));
-    if (protectedWithoutGrant) {
-      result.push(clone(previous));
-      continue;
-    }
-    const merged = clone(next);
-    if (previous?.children && Array.isArray(next.children)) {
-      merged.children = mergeElementTree(previous.children, next.children, true, isAdmin, allowedComponentIds);
-    }
-    result.push(merged);
-  }
-
-  // A protected node omitted by an unauthorized collaborator cannot be deleted.
-  for (const previous of current) {
-    if (!previous?.id || incomingById.has(String(previous.id))) continue;
-    if (previous.isProtected === true && !isAdmin && !allowedComponentIds.has(String(previous.id))) {
-      result.push(clone(previous));
-    }
-  }
-  return result;
-}
-
-function mergeEditorData(
-  currentData: any,
-  incomingData: any,
-  canEditDesign: boolean,
-  isAdmin: boolean,
-  allowedComponentIds: Set<string>
-): JsonObject {
-  const current = clone(currentData || {});
-  const incoming = clone(incomingData || {});
-  const merged: JsonObject = canEditDesign ? { ...current, ...incoming } : { ...current };
-
-  merged.elements = mergeElementTree(current.elements || [], incoming.elements || [], canEditDesign, isAdmin, allowedComponentIds);
-
-  const currentPages = Array.isArray(current.pages) ? current.pages : [];
-  const incomingPages = Array.isArray(incoming.pages) ? incoming.pages : [];
-  if (canEditDesign) {
-    const currentById = new Map(currentPages.map((p: any) => [String(p.id), p]));
-    merged.pages = incomingPages.map((page: any) => {
-      const previous: any = currentById.get(String(page.id));
-      if (!previous) return clone(page);
-      return {
-        ...clone(page),
-        elements: mergeElementTree(previous.elements || [], page.elements || [], true, isAdmin, allowedComponentIds),
-      };
-    });
-  } else {
-    const incomingById = new Map(incomingPages.map((p: any) => [String(p.id), p]));
-    merged.pages = currentPages.map((page: any) => {
-      const next: any = incomingById.get(String(page.id));
-      return next ? { ...clone(page), elements: mergeElementTree(page.elements || [], next.elements || [], false, isAdmin, allowedComponentIds) } : clone(page);
-    });
-  }
-
-  const currentPopups = Array.isArray(current.popups) ? current.popups : [];
-  const incomingPopups = Array.isArray(incoming.popups) ? incoming.popups : [];
-  if (canEditDesign) {
-    const currentById = new Map(currentPopups.map((p: any) => [String(p.id), p]));
-    merged.popups = incomingPopups.map((popup: any) => {
-      const previous: any = currentById.get(String(popup.id));
-      return previous ? { ...clone(popup), elements: mergeElementTree(previous.elements || [], popup.elements || [], true, isAdmin, allowedComponentIds) } : clone(popup);
-    });
-  } else {
-    const incomingById = new Map(incomingPopups.map((p: any) => [String(p.id), p]));
-    merged.popups = currentPopups.map((popup: any) => {
-      const next: any = incomingById.get(String(popup.id));
-      return next ? { ...clone(popup), elements: mergeElementTree(popup.elements || [], next.elements || [], false, isAdmin, allowedComponentIds) } : clone(popup);
-    });
-  }
-
-  return merged;
 }
 
 async function editorAccess(websiteId: string, userId: string) {
@@ -157,8 +26,7 @@ async function editorAccess(websiteId: string, userId: string) {
 export async function getEditorState(websiteId: string, userId: string) {
   await getWebsiteById(websiteId, userId);
   const rows = await prisma.$queryRawUnsafe<any[]>(
-    `SELECT id, name, slug, status, "editorData", "currentRevision", "updatedAt" FROM websites WHERE id=$1::uuid LIMIT 1`,
-    websiteId,
+    `SELECT id,name,slug,status,"editorData","currentRevision","updatedAt" FROM websites WHERE id=$1::uuid LIMIT 1`, websiteId,
   );
   if (!rows[0]) throw new AppError("Website not found", 404, "WEBSITE_NOT_FOUND");
   return rows[0];
@@ -180,18 +48,15 @@ export async function saveEditorRevision(websiteId: string, userId: string, inpu
 
   return prisma.$transaction(async (tx) => {
     const duplicate = await tx.$queryRawUnsafe<any[]>(
-      `SELECT revision, "requestHash", "createdAt" FROM website_revisions WHERE "websiteId"=$1::uuid AND "requestKey"=$2 LIMIT 1`,
-      websiteId, input.requestKey,
+      `SELECT revision,"requestHash","createdAt" FROM website_revisions WHERE "websiteId"=$1::uuid AND "requestKey"=$2 LIMIT 1`, websiteId, input.requestKey,
     );
     if (duplicate[0]) {
-      if (duplicate[0].requestHash !== requestHash) {
-        throw new AppError("requestKey was already used with a different payload", 409, "IDEMPOTENCY_KEY_REUSED");
-      }
+      if (duplicate[0].requestHash !== requestHash) throw new AppError("requestKey was already used with a different payload", 409, "IDEMPOTENCY_KEY_REUSED");
       return { revision: Number(duplicate[0].revision), persisted: true, duplicate: true, savedAt: duplicate[0].createdAt };
     }
 
     const rows = await tx.$queryRawUnsafe<any[]>(
-      `SELECT "editorData", "currentRevision" FROM websites WHERE id=$1::uuid FOR UPDATE`, websiteId,
+      `SELECT "editorData","currentRevision" FROM websites WHERE id=$1::uuid FOR UPDATE`, websiteId,
     );
     const current = rows[0];
     if (!current) throw new AppError("Website not found", 404, "WEBSITE_NOT_FOUND");
@@ -203,11 +68,10 @@ export async function saveEditorRevision(websiteId: string, userId: string, inpu
     const editorData = mergeEditorData(current.editorData, input.editorData, access.canEditDesign, access.isAdmin, allowedIds);
     const nextRevision = currentRevision + 1;
     const updated = await tx.$queryRawUnsafe<any[]>(
-      `UPDATE websites SET "editorData"=$1::jsonb, "currentRevision"=$2, "updatedAt"=NOW() WHERE id=$3::uuid AND "currentRevision"=$4 RETURNING "updatedAt"`,
+      `UPDATE websites SET "editorData"=$1::jsonb,"currentRevision"=$2,"updatedAt"=NOW() WHERE id=$3::uuid AND "currentRevision"=$4 RETURNING "updatedAt"`,
       JSON.stringify(editorData), nextRevision, websiteId, currentRevision,
     );
     if (!updated[0]) throw new AppError("Revision changed while saving", 409, "REVISION_CONFLICT");
-
     await tx.$executeRawUnsafe(
       `INSERT INTO website_revisions ("websiteId",revision,"requestKey","requestHash","editorData","actorUserId") VALUES ($1::uuid,$2,$3,$4,$5::jsonb,$6::uuid)`,
       websiteId, nextRevision, input.requestKey, requestHash, JSON.stringify(editorData), userId,
@@ -220,16 +84,14 @@ export async function listRevisions(websiteId: string, userId: string, limit = 3
   await getWebsiteById(websiteId, userId);
   const bounded = Math.max(1, Math.min(100, Math.trunc(limit || 30)));
   return prisma.$queryRawUnsafe<any[]>(
-    `SELECT revision, "actorUserId", "createdAt" FROM website_revisions WHERE "websiteId"=$1::uuid ORDER BY revision DESC LIMIT $2`,
-    websiteId, bounded,
+    `SELECT revision,"actorUserId","createdAt" FROM website_revisions WHERE "websiteId"=$1::uuid ORDER BY revision DESC LIMIT $2`, websiteId, bounded,
   );
 }
 
 export async function getRevision(websiteId: string, userId: string, revision: number) {
   await getWebsiteById(websiteId, userId);
   const rows = await prisma.$queryRawUnsafe<any[]>(
-    `SELECT revision, "editorData", "actorUserId", "createdAt" FROM website_revisions WHERE "websiteId"=$1::uuid AND revision=$2 LIMIT 1`,
-    websiteId, revision,
+    `SELECT revision,"editorData","actorUserId","createdAt" FROM website_revisions WHERE "websiteId"=$1::uuid AND revision=$2 LIMIT 1`, websiteId, revision,
   );
   if (!rows[0]) throw new AppError("Revision not found", 404, "REVISION_NOT_FOUND");
   return rows[0];
@@ -252,7 +114,6 @@ export async function publishCurrentRevision(websiteId: string, userId: string, 
     );
     const site = siteRows[0];
     if (!site) throw new AppError("Website not found", 404, "WEBSITE_NOT_FOUND");
-
     const customCode = await tx.$queryRawUnsafe<any[]>(
       `SELECT id,name,title,"codeType",language,placement,location,scope,"pageId",code,priority,conditions,status,"isEnabled","isActive","isDraft" FROM custom_code_snippets WHERE "websiteId"=$1::uuid AND "isEnabled"=true AND "isActive"=true AND "isDraft"=false`, websiteId,
     );
@@ -270,13 +131,12 @@ export async function publishCurrentRevision(websiteId: string, userId: string, 
     const hash = contentHash(payload);
 
     const duplicate = await tx.$queryRawUnsafe<any[]>(
-      `SELECT id,"releaseNumber","sourceRevision","contentHash",status,"activatedAt" FROM site_releases WHERE "websiteId"=$1::uuid AND "requestKey"=$2 LIMIT 1`,
-      websiteId, requestKey,
+      `SELECT id,"releaseNumber","sourceRevision","contentHash",status,"activatedAt","requestHash" FROM site_releases WHERE "websiteId"=$1::uuid AND "requestKey"=$2 LIMIT 1`, websiteId, requestKey,
     );
     if (duplicate[0]) {
-      const stored = await tx.$queryRawUnsafe<any[]>(`SELECT "requestHash" FROM site_releases WHERE id=$1::uuid`, duplicate[0].id);
-      if (stored[0]?.requestHash !== requestHash) throw new AppError("requestKey was already used with a different release", 409, "IDEMPOTENCY_KEY_REUSED");
-      return { ...duplicate[0], duplicate: true };
+      if (duplicate[0].requestHash !== requestHash) throw new AppError("requestKey was already used with a different release", 409, "IDEMPOTENCY_KEY_REUSED");
+      const { requestHash: _hidden, ...publicRelease } = duplicate[0];
+      return { ...publicRelease, duplicate: true };
     }
 
     const sequence = await tx.$queryRawUnsafe<any[]>(
@@ -288,7 +148,7 @@ export async function publishCurrentRevision(websiteId: string, userId: string, 
       `INSERT INTO site_releases ("websiteId","releaseNumber","sourceRevision","requestKey","requestHash","contentHash",payload,status,"createdBy","activatedAt") VALUES ($1::uuid,$2,$3,$4,$5,$6,$7::jsonb,'ACTIVE',$8::uuid,NOW()) RETURNING id,"releaseNumber","sourceRevision","contentHash",status,"activatedAt","createdAt"`,
       websiteId, releaseNumber, sourceRevision, requestKey, requestHash, hash, JSON.stringify(payload), userId,
     );
-    await tx.$executeRawUnsafe(`UPDATE websites SET status='PUBLISHED', "updatedAt"=NOW() WHERE id=$1::uuid`, websiteId);
+    await tx.$executeRawUnsafe(`UPDATE websites SET status='PUBLISHED',"updatedAt"=NOW() WHERE id=$1::uuid`, websiteId);
     return { ...release[0], duplicate: false };
   });
 }
