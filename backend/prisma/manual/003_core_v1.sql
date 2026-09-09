@@ -3,6 +3,7 @@
 BEGIN;
 
 ALTER TABLE websites
+  ADD COLUMN IF NOT EXISTS "performanceSettings" jsonb NOT NULL DEFAULT '{}'::jsonb,
   ADD COLUMN IF NOT EXISTS "currentRevision" bigint NOT NULL DEFAULT 0;
 
 CREATE TABLE IF NOT EXISTS website_revisions (
@@ -12,6 +13,7 @@ CREATE TABLE IF NOT EXISTS website_revisions (
   "requestKey" text,
   "requestHash" char(64),
   "editorData" jsonb NOT NULL,
+  "performanceSettings" jsonb NOT NULL DEFAULT '{}'::jsonb,
   "actorUserId" uuid NOT NULL REFERENCES users(id),
   "createdAt" timestamptz NOT NULL DEFAULT now(),
   UNIQUE ("websiteId", revision),
@@ -21,8 +23,8 @@ CREATE TABLE IF NOT EXISTS website_revisions (
 CREATE INDEX IF NOT EXISTS website_revisions_created_idx
   ON website_revisions ("websiteId", "createdAt" DESC);
 
-INSERT INTO website_revisions ("websiteId", revision, "editorData", "actorUserId")
-SELECT w.id, 0, w."editorData", w."userId"
+INSERT INTO website_revisions ("websiteId", revision, "editorData", "performanceSettings", "actorUserId")
+SELECT w.id, 0, w."editorData", COALESCE(w."performanceSettings", '{}'::jsonb), w."userId"
 FROM websites w
 WHERE NOT EXISTS (
   SELECT 1 FROM website_revisions r WHERE r."websiteId" = w.id AND r.revision = 0
