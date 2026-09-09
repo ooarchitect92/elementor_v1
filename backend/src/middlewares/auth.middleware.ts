@@ -1,78 +1,29 @@
-import type {
-  Request,
-  Response,
-  NextFunction,
-} from "express";
-import crypto from "crypto";
-import { prisma } from "../config/prisma.js";
-import { AUTH_COOKIE_NAME } from "../config/auth.js";
+import type { Request, Response, NextFunction } from 'express';
+import crypto from 'crypto';
+import { prisma } from '../config/prisma.js';
+import { AUTH_COOKIE_NAME } from '../config/auth.js';
+import { isSessionToken, sessionDenial } from './session-policy.js';
 
-function hashToken(token: string): string {
-  return crypto
-    .createHash("sha256")
-    .update(token)
-    .digest("hex");
-}
-
-export async function requireAuth(
-  req: Request,
-  res: Response,
-  next: NextFunction
-) {
+export async function requireAuth(req: Request, res: Response, next: NextFunction) {
+  // Never retain authority if this middleware is invoked again and fails.
+  delete res.locals.user;
+  delete res.locals.session;
+  delete res.locals.tenant;
   try {
-    const token = req.cookies?.[AUTH_COOKIE_NAME];
-
-    if (!token) {
-      return res.status(401).json({
-        success: false,
-        message: "Authentication required",
-      });
+    const token: unknown = req.cookies?.[AUTH_COOKIE_NAME];
+    if (!isSessionToken(token)) {
+      return res.status(401).json({ success: false, code: 'AUTHENTICATION_REQUIRED', message: 'Authentication required' });
     }
-
-    const tokenHash = hashToken(token);
-
-    const session = await prisma.session.findUnique({
-      where: {
-        tokenHash,
-      },
-      include: {
-        user: true,
-      },
-    });
-
-    if (!session) {
-      return res.status(401).json({
-        success: false,
-        message: "Invalid session",
-      });
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const session = await prisma.session.findUnique({ where: { tokenHash }, include: { user: true } });
+    const denial = sessionDenial(session);
+    if (denial) {
+      return res.status(denial.status).json({ success: false, code: denial.code, message: denial.message });
     }
-
-    if (session.revokedAt) {
-      return res.status(401).json({
-        success: false,
-        message: "Session has been revoked",
-      });
-    }
-
-    if (session.expiresAt <= new Date()) {
-      return res.status(401).json({
-        success: false,
-        message: "Session expired",
-      });
-    }
-
-    await prisma.session.update({
-      where: {
-        id: session.id,
-      },
-      data: {
-        lastUsedAt: new Date(),
-      },
-    });
-
+    if (!session) return; // Policy already returned a response for this case.
+    await prisma.session.update({ where: { id: session.id }, data: { lastUsedAt: new Date() } });
     res.locals.user = session.user;
     res.locals.session = session;
-
     next();
   } catch (error) {
     next(error);
