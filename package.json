@@ -12,6 +12,7 @@
     "typecheck": "tsc -p tsconfig.foundation.json",
     "check": "npm run typecheck && npm run build:foundation && npm test && node scripts/check-foundation.mjs",
     "inventory": "node scripts/inventory.mjs",
+    "certify:legacy": "node scripts/inventory.mjs && npm --prefix backend run build && npm --prefix frontend run build",
     "infra:up": "docker compose up -d --wait",
     "infra:full": "docker compose --profile analytics --profile wordpress up -d --wait",
     "infra:init": "node --env-file=.env scripts/init-infrastructure.mjs",
