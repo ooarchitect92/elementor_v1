@@ -59,3 +59,26 @@ jobs:
           DATABASE_URL: postgresql://localhost/forgestudio_build
       - run: npm run build
         working-directory: ${{ matrix.app }}
+  workspace-api:
+    # Non-informational gate: compile the real backend, exercise HTTP and real PG.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: {node-version: '22'}
+      - run: npm --prefix backend ci --ignore-scripts
+      - run: npm --prefix backend run db:generate
+        env:
+          DATABASE_URL: postgresql://localhost/forgestudio_build
+      - run: npm --prefix backend run build
+      - run: node --test tests/http/workspaces.test.mjs
+      - run: npm run bootstrap
+      - run: docker compose up -d --wait postgres
+      - run: node --env-file=.env scripts/init-workspaces.mjs --development
+      - run: node --env-file=.env --test tests/integration/workspaces.postgres.test.mjs
+        env:
+          WORKSPACE_DISPOSABLE_TEST: '1'
+      - name: Remove only disposable CI fixtures
+        if: always()
+        run: docker compose down -v

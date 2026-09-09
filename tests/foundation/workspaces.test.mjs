@@ -1,0 +1,47 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { createWorkspaceCommand, updateWorkspaceCommand, listWorkspaceCommand, assertWorkspaceMutation, serializeWorkspace, runWorkspaceCommand } from '../../backend/src/modules/tenancy/workspace.core.ts';
+const id = n => `00000000-0000-4000-8000-${String(n).padStart(12,'0')}`;
+const actor={userId:id(1),sessionId:id(2),tenantId:id(3),traceId:id(4)};
+const row={id:id(5),tenant_id:id(3),name:'Workspace',slug:'workspace',status:'ACTIVE',version:1n,created_by:id(1),created_at:new Date('2026-09-09T00:00:00Z'),updated_at:new Date('2026-09-09T00:00:00Z'),create_key:id(6),create_name:'Workspace',create_slug:'workspace'};
+const create=()=>createWorkspaceCommand({name:'Workspace',slug:'workspace'},id(6),id(5));
+function fake({unsafe=false,session=true,role='OWNER',data=[[row]],auditFailure=false}={}) {
+  const calls=[]; let queries=0;
+  return {calls, async $queryRaw(strings,...values) {
+    const sql=strings.join('?'); calls.push({sql,values}); queries++;
+    if(queries===1)return [];
+    if(queries===2)return [{unsafe}];
+    if(queries===3)return session?[{id:actor.sessionId}]:[];
+    if(queries===4)return role===null?[]:[{role}];
+    if(!data.length)throw new Error('Unexpected query '+sql);
+    return data.shift();
+  }, async $executeRaw(strings,...values) {calls.push({sql:strings.join('?'),values}); if(auditFailure)throw new Error('audit unavailable'); return 1;} };
+}
+const code=c=>e=>e.code===c;
+test('create normalizes name and keeps tenant authority out of input',()=>assert.equal(createWorkspaceCommand({name:' Workspace ',slug:'workspace'},id(6),id(5)).name,'Workspace'));
+for(const body of [null,[],{}, {name:'',slug:'x'}, {name:'a',slug:'UPPER'}, {name:'a',slug:'a--b'}, {name:'a\n',slug:'a',tenantId:id(8)}, {name:'a',slug:'x',createdBy:id(8)}]) test(`invalid creation body ${JSON.stringify(body)}`,()=>assert.throws(()=>createWorkspaceCommand(body,id(6),id(5)),code('INVALID_INPUT')));
+test('create requires UUID idempotency key',()=>assert.throws(()=>createWorkspaceCommand({name:'a',slug:'a'},'key',id(5)),code('INVALID_INPUT')));
+for(const expectedVersion of [1,'0','-1','1.5','9223372036854775807','1e3']) test(`invalid expectedVersion ${expectedVersion}`,()=>assert.throws(()=>updateWorkspaceCommand(id(5),{name:'Updated',expectedVersion}),code('INVALID_INPUT')));
+test('patch cannot change slug or tenant',()=>assert.throws(()=>updateWorkspaceCommand(id(5),{slug:'bad',expectedVersion:'1'}),code('INVALID_INPUT')));
+test('empty patch rejected',()=>assert.throws(()=>updateWorkspaceCommand(id(5),{expectedVersion:'1'}),code('INVALID_INPUT')));
+test('bounded cursor pagination',()=>assert.deepEqual(listWorkspaceCommand({after:id(5),limit:'100'}),{kind:'list',after:id(5),limit:100}));
+for(const limit of ['0','101','1.5','1e2',{},['10']])test(`invalid limit ${JSON.stringify(limit)}`,()=>assert.throws(()=>listWorkspaceCommand({limit}),code('INVALID_INPUT')));
+test('exact trusted origin with non-simple marker accepted',()=>assert.doesNotThrow(()=>assertWorkspaceMutation('https://builder.example','workspace-v1','application/json; charset=utf-8','https://builder.example/',true)));
+for(const origin of [undefined,'null','https://builder.example.attacker.test','http://builder.example','https://builder.example/'])test(`untrusted origin ${origin}`,()=>assert.throws(()=>assertWorkspaceMutation(origin,'workspace-v1','application/json','https://builder.example',true),code('REQUEST_ORIGIN_DENIED')));
+test('missing custom header denied',()=>assert.throws(()=>assertWorkspaceMutation('https://builder.example',undefined,'application/json','https://builder.example',true),code('REQUEST_ORIGIN_DENIED')));
+test('form content type denied',()=>assert.throws(()=>assertWorkspaceMutation('https://builder.example','workspace-v1','text/plain','https://builder.example',true),code('JSON_REQUIRED')));
+for(const configured of [undefined,'*','http://builder.example','https://user:pass@builder.example','https://builder.example/path'])test(`invalid production origin ${configured}`,()=>assert.throws(()=>assertWorkspaceMutation('https://builder.example','workspace-v1','application/json',configured,true),code('WORKSPACE_ORIGIN_NOT_CONFIGURED')));
+test('serialization excludes receipt key and converts bigint/date',()=>{const value=serializeWorkspace(row);assert.equal(value.version,'1');assert.equal(value.createdAt,'2026-09-09T00:00:00.000Z');assert.equal('create_key'in value,false);});
+test('database role must not bypass RLS',async()=>{const tx=fake({unsafe:true});await assert.rejects(runWorkspaceCommand(tx,actor,create(),id(9)),code('UNSAFE_DATABASE_ROLE'));assert.equal(tx.calls.length,2);});
+test('expired/revoked/inactive session prevents tenant reads and writes',async()=>{const tx=fake({session:false});await assert.rejects(runWorkspaceCommand(tx,actor,create(),id(9)),code('SESSION_NOT_ACTIVE'));assert.equal(tx.calls.length,3);});
+for(const role of [null,'UNKNOWN','VIEWER','EDITOR','PUBLISHER'])test(`role ${role} cannot create`,async()=>{const tx=fake({role});await assert.rejects(runWorkspaceCommand(tx,actor,create(),id(9)));assert.equal(tx.calls.length,4);});
+for(const role of ['OWNER','ADMIN'])test(`${role} can create and audit in one transaction`,async()=>{const tx=fake({role});const out=await runWorkspaceCommand(tx,actor,create(),id(9));assert.equal(out.workspace.id,row.id);assert.equal(out.replayed,false);assert.match(tx.calls.at(-1).sql,/INSERT INTO platform.audit_events/);assert.match(tx.calls[2].sql,/FOR SHARE OF u, s/);assert.match(tx.calls[3].sql,/FOR SHARE OF t, m/);});
+for(const role of ['OWNER','ADMIN','EDITOR','PUBLISHER','VIEWER'])test(`${role} can list`,async()=>{const tx=fake({role});const out=await runWorkspaceCommand(tx,actor,listWorkspaceCommand({}),id(9));assert.equal(out.workspaces.length,1);assert.equal(tx.calls.length,5);});
+test('duplicate create returns original receipt even after workspace changed',async()=>{const tx=fake({data:[[],[{...row,name:'Renamed',status:'ARCHIVED',version:3n}]]});const out=await runWorkspaceCommand(tx,actor,create(),id(9));assert.equal(out.workspace.name,'Workspace');assert.equal(out.workspace.status,'ACTIVE');assert.equal(out.workspace.version,'1');assert.equal(out.replayed,true);assert.equal(tx.calls.length,6);});
+test('idempotency key reuse with different content conflicts',async()=>{const tx=fake({data:[[],[{...row,create_name:'Different'}]]});await assert.rejects(runWorkspaceCommand(tx,actor,create(),id(9)),code('IDEMPOTENCY_KEY_REUSED'));});
+test('slug collision does not falsely acknowledge creation',async()=>{const tx=fake({data:[[],[]]});await assert.rejects(runWorkspaceCommand(tx,actor,create(),id(9)),code('WORKSPACE_SLUG_CONFLICT'));});
+test('stale version conflicts, without an audit event',async()=>{const tx=fake({data:[[],[{id:row.id}]]});await assert.rejects(runWorkspaceCommand(tx,actor,updateWorkspaceCommand(row.id,{name:'Updated',expectedVersion:'1'}),id(9)),code('WORKSPACE_VERSION_CONFLICT'));assert.equal(tx.calls.length,6);});
+test('another tenant workspace looks absent',async()=>{const tx=fake({data:[[]]});await assert.rejects(runWorkspaceCommand(tx,actor,{kind:'get',id:id(10)},id(9)),code('WORKSPACE_NOT_FOUND'));assert.ok(tx.calls.at(-1).values.includes(actor.tenantId));});
+test('audit failure rejects entire operation rather than returning success',async()=>{const tx=fake({auditFailure:true});await assert.rejects(runWorkspaceCommand(tx,actor,create(),id(9)),/audit unavailable/);});
+test('transaction-local scopes overwrite both previous identities',async()=>{const tx=fake();await runWorkspaceCommand(tx,actor,create(),id(9));assert.deepEqual(tx.calls[0].values,[actor.userId,actor.tenantId]);assert.match(tx.calls[0].sql,/app.user_id/);assert.match(tx.calls[0].sql,/app.tenant_id/);assert.match(tx.calls[0].sql,/, true/);});
+test('pagination returns a continuation only with one extra row',async()=>{const tx=fake({data:[[row,{...row,id:id(7)}]]});const out=await runWorkspaceCommand(tx,actor,listWorkspaceCommand({limit:'1'}),id(9));assert.equal(out.workspaces.length,1);assert.equal(out.nextCursor,row.id);});
