@@ -1,0 +1,92 @@
+name: Core v1 publish job integration
+on:
+  push:
+    branches: [implementation/core-v1]
+    paths:
+      - .github/workflows/core-v1-publish-job-integration.yml
+      - .github/runtime/publish-job-slice.tar.gz
+permissions:
+  contents: write
+jobs:
+  verify:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      WORKER_TENANT_IDS: 11111111-1111-4111-8111-111111111111
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: implementation/core-v1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Verify and apply reviewed publish-job slice
+        shell: bash
+        run: |
+          echo '493e24ae2744609497e003c41edf43ad961dbbd0e66c9b97924986f58a61e2cb  .github/runtime/publish-job-slice.tar.gz' | sha256sum -c -
+          tar -xzf .github/runtime/publish-job-slice.tar.gz
+          while IFS= read -r file; do
+            node --experimental-strip-types --check "$file" >/dev/null
+          done < <(find packages workers -type f -name '*.ts' -print | sort)
+      - name: Verify root contracts
+        run: |
+          npm ci --ignore-scripts
+          npm run check
+          npm run inventory
+      - name: Verify backend compilation
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql://localhost/forgestudio_build
+        run: |
+          npm ci --ignore-scripts
+          npm run db:generate
+          npm run build
+      - name: Verify worker images and real publish lifecycle
+        shell: bash
+        run: |
+          npm run bootstrap
+          docker compose --profile analytics --profile wordpress --profile workers config --quiet
+          docker compose --profile workers build outbox-worker publish-worker
+          docker compose --profile analytics up -d --wait postgres redis-cache redis-control rabbitmq kafka
+          npm run infra:init -- --kafka
+          npm run infra:smoke -- --kafka
+          npm run core:smoke
+          npm run runtime:smoke
+          npm run publish:smoke
+      - name: Diagnostic logs on failure
+        if: failure()
+        run: docker compose --profile analytics --profile workers logs --tail=240 postgres redis-cache redis-control rabbitmq kafka outbox-worker publish-worker
+      - name: Remove disposable integration fixtures
+        if: always()
+        run: docker compose --profile analytics --profile workers down -v
+      - name: Commit verified non-workflow files
+        shell: bash
+        run: |
+          git config user.name 'ForgeStudio CI'
+          git config user.email 'actions@users.noreply.github.com'
+          git add \
+            .env.example \
+            backend/.env.example \
+            backend/prisma/manual/004_platform_tenant_jobs.sql \
+            backend/src/app.ts \
+            backend/src/services/platform-tenant.service.ts \
+            backend/src/modules/jobs-v2/jobs.service.ts \
+            backend/src/modules/jobs-v2/jobs.routes.ts \
+            compose.yaml \
+            docs/api/openapi.json \
+            docs/runbooks/MESSAGING_RUNTIME.md \
+            infrastructure/docker/worker.Dockerfile \
+            infrastructure/postgres/003_job_resources.sql \
+            package.json \
+            scripts/check-foundation.mjs \
+            scripts/smoke-publish-job.mjs \
+            tests/foundation/publish-adapter.test.mjs \
+            workers/publish/main.ts \
+            workers/publish/publish-adapter.ts \
+            workers/registry.json \
+            workers/shared/postgres.ts
+          git diff --cached --check
+          git commit -m 'feat(publish): add durable website-scoped publish jobs'
+          git push origin HEAD:implementation/core-v1
