@@ -18,6 +18,8 @@
     "infra:down": "docker compose down",
     "infra:smoke": "node --env-file=.env scripts/smoke-infrastructure.mjs",
     "core:smoke": "node scripts/smoke-core-v1.mjs",
+    "runtime:smoke": "node --env-file=.env --experimental-strip-types scripts/smoke-runtime.mjs",
+    "worker:outbox": "node --env-file=.env --experimental-strip-types workers/outbox/main.ts",
     "dev:backend": "npm --prefix backend run dev",
     "dev:frontend": "npm --prefix frontend run dev",
     "build:foundation": "tsc -p tsconfig.foundation.build.json",
