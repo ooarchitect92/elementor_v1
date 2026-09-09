@@ -15,24 +15,16 @@ export interface TenantMembership {
 
 interface MembershipRow {
   tenant_id: string;
-  tenant_name: string;
-  tenant_status: "ACTIVE" | "SUSPENDED" | "DELETED";
   user_id: string;
   role: TenantRole;
   membership_status: "ACTIVE" | "SUSPENDED";
   version: bigint;
 }
 
-function mapMembership(row: MembershipRow): TenantMembership {
-  return {
-    tenantId: row.tenant_id,
-    tenantName: row.tenant_name,
-    tenantStatus: row.tenant_status,
-    userId: row.user_id,
-    role: row.role,
-    membershipStatus: row.membership_status,
-    version: row.version,
-  };
+interface TenantRow {
+  id: string;
+  name: string;
+  status: "ACTIVE" | "SUSPENDED" | "DELETED";
 }
 
 async function withVerifiedUserScope<T>(
@@ -45,25 +37,50 @@ async function withVerifiedUserScope<T>(
   });
 }
 
+async function readTenantWithinScope(
+  tx: Prisma.TransactionClient,
+  tenantId: string,
+): Promise<TenantRow | null> {
+  await tx.$queryRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`;
+  const tenants = await tx.$queryRaw<TenantRow[]>`
+    SELECT id, name, status
+    FROM platform.tenants
+    WHERE id = ${tenantId}::uuid
+    LIMIT 1
+  `;
+  return tenants[0] ?? null;
+}
+
 export async function listActiveTenantMemberships(userId: string): Promise<TenantMembership[]> {
   return withVerifiedUserScope(userId, async (tx) => {
-    const rows = await tx.$queryRaw<MembershipRow[]>`
+    const memberships = await tx.$queryRaw<MembershipRow[]>`
       SELECT
-        m.tenant_id,
-        t.name AS tenant_name,
-        t.status AS tenant_status,
-        m.user_id,
-        m.role,
-        m.status AS membership_status,
-        m.version
-      FROM platform.memberships m
-      JOIN platform.tenants t ON t.id = m.tenant_id
-      WHERE m.user_id = ${userId}::uuid
-        AND m.status = 'ACTIVE'
-        AND t.status = 'ACTIVE'
-      ORDER BY t.created_at ASC, m.tenant_id ASC
+        tenant_id,
+        user_id,
+        role,
+        status AS membership_status,
+        version
+      FROM platform.memberships
+      WHERE user_id = ${userId}::uuid
+        AND status = 'ACTIVE'
+      ORDER BY tenant_id ASC
     `;
-    return rows.map(mapMembership);
+
+    const result: TenantMembership[] = [];
+    for (const membership of memberships) {
+      const tenant = await readTenantWithinScope(tx, membership.tenant_id);
+      if (!tenant || tenant.status !== "ACTIVE") continue;
+      result.push({
+        tenantId: membership.tenant_id,
+        tenantName: tenant.name,
+        tenantStatus: tenant.status,
+        userId: membership.user_id,
+        role: membership.role,
+        membershipStatus: membership.membership_status,
+        version: membership.version,
+      });
+    }
+    return result;
   });
 }
 
@@ -72,23 +89,35 @@ export async function resolveActiveTenantMembership(
   tenantId: string,
 ): Promise<TenantMembership | null> {
   return withVerifiedUserScope(userId, async (tx) => {
-    const rows = await tx.$queryRaw<MembershipRow[]>`
+    await tx.$queryRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`;
+
+    const memberships = await tx.$queryRaw<MembershipRow[]>`
       SELECT
-        m.tenant_id,
-        t.name AS tenant_name,
-        t.status AS tenant_status,
-        m.user_id,
-        m.role,
-        m.status AS membership_status,
-        m.version
-      FROM platform.memberships m
-      JOIN platform.tenants t ON t.id = m.tenant_id
-      WHERE m.user_id = ${userId}::uuid
-        AND m.tenant_id = ${tenantId}::uuid
-        AND m.status = 'ACTIVE'
-        AND t.status = 'ACTIVE'
+        tenant_id,
+        user_id,
+        role,
+        status AS membership_status,
+        version
+      FROM platform.memberships
+      WHERE user_id = ${userId}::uuid
+        AND tenant_id = ${tenantId}::uuid
+        AND status = 'ACTIVE'
       LIMIT 1
     `;
-    return rows[0] ? mapMembership(rows[0]) : null;
+    const membership = memberships[0];
+    if (!membership) return null;
+
+    const tenant = await readTenantWithinScope(tx, tenantId);
+    if (!tenant || tenant.status !== "ACTIVE") return null;
+
+    return {
+      tenantId: membership.tenant_id,
+      tenantName: tenant.name,
+      tenantStatus: tenant.status,
+      userId: membership.user_id,
+      role: membership.role,
+      membershipStatus: membership.membership_status,
+      version: membership.version,
+    };
   });
 }
