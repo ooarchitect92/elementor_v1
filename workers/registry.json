@@ -1,7 +1,18 @@
 {
-  "version": 1,
+  "version": 2,
   "enabled": false,
-  "leaseRecoveryImplemented": false,
+  "leaseRecoveryImplemented": true,
+  "infrastructureRuntimes": [
+    {
+      "id": "tenant-outbox-relay",
+      "entrypoint": "workers/outbox/main.ts",
+      "status": "implemented",
+      "destinations": [
+        "rabbitmq",
+        "kafka"
+      ]
+    }
+  ],
   "handlers": [],
-  "reason": "Foundation ports only; domain workers and reconciliation must pass integration gates before activation."
+  "reason": "Durable relay and lease recovery are implemented and integration-gated. Domain adapters remain disabled until each queue has provider-specific contract, failure and idempotency evidence."
 }

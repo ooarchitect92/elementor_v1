@@ -17,12 +17,23 @@
     "infra:init": "node --env-file=.env scripts/init-infrastructure.mjs",
     "infra:down": "docker compose down",
     "infra:smoke": "node --env-file=.env scripts/smoke-infrastructure.mjs",
+    "core:smoke": "node scripts/smoke-core-v1.mjs",
+    "runtime:smoke": "node --env-file=.env --experimental-strip-types scripts/smoke-runtime.mjs",
+    "worker:outbox": "node --env-file=.env --experimental-strip-types workers/outbox/main.ts",
     "dev:backend": "npm --prefix backend run dev",
     "dev:frontend": "npm --prefix frontend run dev",
     "build:foundation": "tsc -p tsconfig.foundation.build.json",
     "status": "node scripts/status.mjs"
   },
   "devDependencies": {
+    "@types/amqplib": "^0.10.8",
+    "@types/pg": "^8.23.1",
     "typescript": "5.8.3"
+  },
+  "dependencies": {
+    "amqplib": "^0.10.9",
+    "kafkajs": "^2.2.4",
+    "pg": "^8.23.0",
+    "redis": "^5.12.1"
   }
 }

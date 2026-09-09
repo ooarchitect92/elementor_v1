@@ -225,12 +225,20 @@ export default function PublishedSite() {
         const fetchWebsite = async () => {
             try {
                 setLoading(true);
-                const res = await fetch(`${apiUrl}/api/websites/${websiteId}`);
+                const res = await fetch(`${apiUrl}/api/v2/public/sites/${websiteId}`, { headers: { Accept: "application/json" } });
                 const data = await res.json();
 
-                if (!res.ok) throw new Error(data?.message || "Failed to load website runtime.");
+                if (!res.ok) throw new Error(data?.error?.message || data?.message || "Failed to load published website.");
 
-                const site = data.website || data;
+                const release = data?.release;
+                const payload = release?.payload;
+                const site = payload ? {
+                    ...payload.website,
+                    editorData: payload.editorData,
+                    customCodeSnippets: payload.customCodeSnippets || [],
+                    themeLocationRules: payload.themeLocationRules || [],
+                } : null;
+                if (!site) throw new Error("Published release payload is missing.");
 
                 if (site?.editorData?.pages && site.editorData.pages.length > 0) {
                     setPages(site.editorData.pages);

@@ -27,94 +27,53 @@ import {
   formRoutes,
   integrationRoutes
 } from "./routes/index.js";
-
+import coreV1Routes from "./modules/core-v1/core.routes.js";
+import wordpressV2Routes from "./modules/wordpress/wordpress.routes.js";
 import { errorMiddleware } from "./middlewares/error.middleware.js";
-
 import { prisma } from "./config/prisma.js";
 import { requestContext, liveness, readiness } from "./platform/health.js";
 
 const app = express();
+app.disable("x-powered-by");
 app.use(requestContext);
 app.get("/api/v1/health/live", liveness);
 app.get("/api/v1/health/ready", readiness(() => prisma.$queryRaw`SELECT 1`));
 
-// =========================
-// Security & Static Files
-// =========================
-
-app.use(
-  helmet({
-    crossOriginResourcePolicy: { policy: "cross-origin" },
-  })
-);
-
+app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
 app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
-
-// =========================
-// CORS & Parsers
-// =========================
-
-app.use(
-  cors({
-    origin: process.env.FRONTEND_URL,
-    credentials: true,
-  })
-);
-
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(cors({ origin: process.env.FRONTEND_URL, credentials: true }));
+app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || "5mb" }));
+app.use(express.urlencoded({ extended: true, limit: process.env.FORM_BODY_LIMIT || "1mb" }));
 app.use(cookieParser());
-
-// =========================
-// Passport Authentication
-// =========================
-
 app.use(passport.initialize());
 
-// =========================
-// Health Check
-// =========================
-
 app.get("/api/v1/health", (_req: Request, res: Response) => {
-  res.status(200).json({
-    success: true,
-    message: "API is healthy",
-  });
+  res.status(200).json({ success: true, message: "API is healthy" });
 });
 
-// =========================
-// API Route Endpoints
-// =========================
+// v2 routes establish durable save/release contracts and secure connector integration.
+// Each router owns its authentication boundary; the core router exposes only its published-only path publicly.
+app.use("/api/v2", coreV1Routes);
+app.use("/api/v2", wordpressV2Routes);
 
-// Auth & Session
 app.use("/api/v1/auth", loginRoutes);
 app.use("/api/v1/auth", signupRoutes);
 app.use("/api/v1/auth", authRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/v1/auth", oauthRoutes);
 app.use("/api/v1/auth", meRoutes);
-
-// Subscriptions
 app.use("/api/v1/subscriptions", subscriptionRoutes);
 app.use("/api/subscriptions", subscriptionRoutes);
-
-// Websites & Workspace
 app.use("/api/v1/websites", websiteRoutes);
 app.use("/api/websites", websiteRoutes);
 app.use("/api/v1/teams", teamRoutes);
 app.use("/api/teams", teamRoutes);
-
-// Media & Uploads
 app.use("/api/v1/uploads", uploadRoutes);
 app.use("/api/uploads", uploadRoutes);
-
-// API Keys & Developer Access
 app.use("/api/v1/apikeys", apiKeysRoutes);
 app.use("/api/apikeys", apiKeysRoutes);
 app.use("/api/v1/developer", developerRoutes);
 app.use("/api/developer", developerRoutes);
-
-// Editor & Custom Content
 app.use("/api/v1/composer", composerRoutes);
 app.use("/api/composer", composerRoutes);
 app.use("/api/v1/cpt", customPostTypeRoutes);
@@ -127,15 +86,14 @@ app.use("/api/v1/component-access", componentAccessRoutes);
 app.use("/api/component-access", componentAccessRoutes);
 app.use("/api/v1/templates", templateRoutes);
 app.use("/api/templates", templateRoutes);
-
-// Plugins & Integrations
 app.use("/api/v1/plugins", pluginCompatRoutes);
 app.use("/api/plugins", pluginCompatRoutes);
 
-// =========================
-// Global Error Handler
-// =========================
+// These registries existed but were not mounted in the original server.
+app.use("/api/v1/forms", formRoutes);
+app.use("/api/forms", formRoutes);
+app.use("/api/v1/integrations", integrationRoutes);
+app.use("/api/integrations", integrationRoutes);
 
 app.use(errorMiddleware);
-
 export default app;
