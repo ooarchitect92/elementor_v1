@@ -21,7 +21,6 @@ CREATE TABLE IF NOT EXISTS website_revisions (
 CREATE INDEX IF NOT EXISTS website_revisions_created_idx
   ON website_revisions ("websiteId", "createdAt" DESC);
 
--- Preserve pre-migration content as revision zero.
 INSERT INTO website_revisions ("websiteId", revision, "editorData", "actorUserId")
 SELECT w.id, 0, w."editorData", w."userId"
 FROM websites w
@@ -58,7 +57,7 @@ CREATE TABLE IF NOT EXISTS wordpress_connections (
   "secretCiphertext" text NOT NULL,
   "secretIv" text NOT NULL,
   "secretTag" text NOT NULL,
-  "capabilities" jsonb NOT NULL DEFAULT '{}'::jsonb,
+  capabilities jsonb NOT NULL DEFAULT '{}'::jsonb,
   status text NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE','REVOKED','ERROR')),
   "lastCheckedAt" timestamptz,
   "createdBy" uuid NOT NULL REFERENCES users(id),
@@ -66,5 +65,34 @@ CREATE TABLE IF NOT EXISTS wordpress_connections (
   "updatedAt" timestamptz NOT NULL DEFAULT now(),
   UNIQUE ("websiteId", "siteUrl")
 );
+
+CREATE TABLE IF NOT EXISTS wordpress_import_runs (
+  id uuid PRIMARY KEY,
+  "websiteId" uuid NOT NULL REFERENCES websites(id) ON DELETE CASCADE,
+  "connectionId" uuid NOT NULL REFERENCES wordpress_connections(id) ON DELETE CASCADE,
+  status text NOT NULL CHECK (status IN ('RUNNING','COMPLETED','FAILED')),
+  summary jsonb,
+  "errorCode" text,
+  "createdBy" uuid NOT NULL REFERENCES users(id),
+  "createdAt" timestamptz NOT NULL DEFAULT now(),
+  "completedAt" timestamptz
+);
+CREATE INDEX IF NOT EXISTS wordpress_import_runs_history_idx
+  ON wordpress_import_runs ("websiteId", "connectionId", "createdAt" DESC);
+
+CREATE TABLE IF NOT EXISTS wordpress_source_snapshots (
+  "connectionId" uuid NOT NULL REFERENCES wordpress_connections(id) ON DELETE CASCADE,
+  "websiteId" uuid NOT NULL REFERENCES websites(id) ON DELETE CASCADE,
+  "sourceType" text NOT NULL CHECK ("sourceType" IN ('page','post','media','term')),
+  "sourceId" text NOT NULL,
+  "sourceModified" text,
+  "sourceHash" char(64) NOT NULL,
+  payload jsonb NOT NULL CHECK (jsonb_typeof(payload)='object'),
+  "firstSeenAt" timestamptz NOT NULL DEFAULT now(),
+  "lastSeenAt" timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY ("connectionId", "sourceType", "sourceId")
+);
+CREATE INDEX IF NOT EXISTS wordpress_source_snapshots_site_idx
+  ON wordpress_source_snapshots ("websiteId", "sourceType", "lastSeenAt" DESC);
 
 COMMIT;
