@@ -1,0 +1,30 @@
+name: Workspace UI gates
+on:
+  push:
+    branches: ['feat/**', 'fix/**', main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: workspace-ui-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  workspace-ui:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts
+      - run: node scripts/check-workspace-ui.mjs
+      - run: npm --prefix frontend ci --ignore-scripts
+      - run: npm --prefix frontend run build
+        env:
+          VITE_API_URL: http://127.0.0.1:5055
+      - name: Built application in Chrome against loopback API fixtures
+        run: node --test tests/browser/workspaces.browser.test.mjs
+        env:
+          WORKSPACE_BROWSER_TEST: '1'
