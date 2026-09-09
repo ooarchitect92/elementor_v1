@@ -20,13 +20,13 @@ function userId(res: Response): string {
   return id;
 }
 
-// Public delivery exposes only the last explicitly activated release.
 router.get("/public/sites/:websiteId", async (req: Request, res: Response, next: NextFunction) => {
   try {
     const release = await getActivePublishedSite(String(req.params.websiteId));
+    const etag = `\"${release.contentHash}\"`;
     res.setHeader("Cache-Control", "public, max-age=60, stale-while-revalidate=300, stale-if-error=86400");
-    res.setHeader("ETag", `\"${release.contentHash}\"`);
-    if (req.headers["if-none-match"] === `\"${release.contentHash}\"`) return res.status(304).end();
+    res.setHeader("ETag", etag);
+    if (req.headers["if-none-match"] === etag) return res.status(304).end();
     return res.status(200).json({ success: true, release });
   } catch (error) { next(error); }
 });
@@ -44,6 +44,7 @@ router.put("/websites/:websiteId/editor-state", async (req, res, next) => {
       expectedRevision: Number(req.body?.expectedRevision),
       requestKey: String(req.body?.requestKey || ""),
       editorData: req.body?.editorData,
+      performanceSettings: req.body?.performanceSettings,
     });
     return res.status(200).json({ success: true, save: result });
   } catch (error) { next(error); }
@@ -65,7 +66,7 @@ router.get("/websites/:websiteId/revisions/:revision", async (req, res, next) =>
 router.post("/websites/:websiteId/publish", async (req, res, next) => {
   try {
     const release = await publishCurrentRevision(String(req.params.websiteId), userId(res), String(req.body?.requestKey || ""));
-    return res.status(201).json({ success: true, release });
+    return res.status(release.duplicate ? 200 : 201).json({ success: true, release });
   } catch (error) { next(error); }
 });
 
