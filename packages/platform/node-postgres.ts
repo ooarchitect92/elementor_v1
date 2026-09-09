@@ -1,4 +1,4 @@
-import pg from "pg";
+import { Pool } from "pg";
 import type { Pool as PoolType, PoolClient, QueryResultRow } from "pg";
 import type { SqlConnection, SqlPool } from "../../workers/shared/postgres.ts";
 import {
@@ -7,7 +7,6 @@ import {
   type RuntimeEnvironment,
 } from "./runtime-config.ts";
 
-const { Pool } = pg;
 
 class PostgresConnection implements SqlConnection {
   constructor(private readonly client: PoolClient) {}
