@@ -1,0 +1,37 @@
+name: Website assignment gates
+on:
+  push:
+    branches: ['feat/**', 'fix/**', main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: site-links-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  site-links:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: {node-version: '22'}
+      - run: npm ci --ignore-scripts
+      - run: npm run check
+      - run: npm --prefix backend ci --ignore-scripts
+      - run: npm --prefix backend run db:generate
+        env:
+          DATABASE_URL: postgresql://localhost/forgestudio_build
+      - run: npm --prefix backend run build
+      - run: npm --prefix frontend ci --ignore-scripts
+      - run: npm --prefix frontend run build
+      - run: npm run bootstrap
+      - run: docker compose up -d --wait postgres
+      - name: Compiled site-link core and Express router with actual PostgreSQL
+        run: node --env-file=.env --test tests/integration/site-links.postgres.test.mjs
+        env:
+          SITE_LINK_DISPOSABLE_TEST: '1'
+      - name: Remove this runner's disposable database fixture only
+        if: always()
+        run: docker compose down -v

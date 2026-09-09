@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import SiteLinksPanel from './SiteLinksPanel';
 import { useAuth } from '../../context/AuthContext';
 import { canManage, createWorkspaceClient, type Workspace } from './workspace-client';
 import { WorkspaceController, WorkspaceRecovery, type UiIssue, type WorkspaceState } from './workspace-controller';
@@ -73,6 +74,7 @@ export function WorkspaceControllerView({ controller }: { controller: WorkspaceC
 }
 
 function TenantWorkspaceView({ state, controller }: { state: WorkspaceState; controller: WorkspaceController }) {
+  const [siteWorkspace, setSiteWorkspace] = useState<string | null>(null);
   const [newName, setNewName] = useState('');
   const [newSlug, setNewSlug] = useState('');
   const [editing, setEditing] = useState<Workspace | null>(null);
@@ -90,7 +92,7 @@ function TenantWorkspaceView({ state, controller }: { state: WorkspaceState; con
   async function cancelEdit() { setEditing(null); await controller.discardDraftAndReload(); }
   return <>
     <div className="rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm leading-relaxed text-blue-900">
-      <strong>Workspace management only.</strong> Existing websites and team collaboration stay unchanged. Website assignment, tenant onboarding, and plan quotas are not enabled by this screen.
+      <strong>Organization, not ownership transfer.</strong> Link your owned websites to a workspace without changing editor or collaborator access. Tenant onboarding and plan quotas remain separate.
     </div>
     {state.notice && <p role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">{state.notice}</p>}
     <Issue issue={state.mutationError} />
@@ -182,6 +184,8 @@ function TenantWorkspaceView({ state, controller }: { state: WorkspaceState; con
             <button className={button} disabled={state.busy || state.loadingList || !!state.listError || !!editing || !!state.pending || blockedUpdate} onClick={() => edit(workspace)} aria-label={`Edit ${workspace.name}`}>Rename / manage</button>
             <button className={button} disabled={state.busy || state.loadingList || !!state.listError || !!editing || !!state.pending || blockedUpdate} onClick={() => edit(workspace, workspace.status === 'ACTIVE' ? 'ARCHIVED' : 'ACTIVE')} aria-label={`${workspace.status === 'ACTIVE' ? 'Archive' : 'Restore'} ${workspace.name}`}>{workspace.status === 'ACTIVE' ? 'Review archive' : 'Review restore'}</button>
           </div>}
+          <button className={`${button} mt-3`} disabled={state.busy || state.loadingList || !!state.listError} aria-expanded={siteWorkspace === workspace.id} onClick={() => setSiteWorkspace(siteWorkspace === workspace.id ? null : workspace.id)}>{siteWorkspace === workspace.id ? 'Close website assignments' : 'My websites in this workspace'}</button>
+          {siteWorkspace === workspace.id && !state.listError && <SiteLinksPanel key={`${state.tenantId}:${workspace.id}`} tenantId={state.tenantId} workspaceId={workspace.id} manageable={manageable} archived={workspace.status === 'ARCHIVED'} />}
         </article>)}
       </div>
       {state.nextCursor && <button className={`${button} mt-5`} disabled={state.loadingList || state.busy} onClick={() => void controller.loadPage(state.nextCursor)}>Load more workspaces</button>}
