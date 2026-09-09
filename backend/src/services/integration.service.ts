@@ -1,171 +1,99 @@
-import crypto from "crypto";
+import { pinnedJsonRequest } from "../modules/wordpress/safe-http.js";
 
-// ==========================================
-// In-Memory Cache for Dynamic Data (O(1) lookup, space-bounded)
-// ==========================================
 interface CacheEntry {
   data: any;
   timestamp: number;
 }
 
 const DYNAMIC_DATA_CACHE = new Map<string, CacheEntry>();
-const CACHE_TTL_MS = 60 * 1000; // 60 seconds TTL
+const CACHE_TTL_MS = 60 * 1000;
+const CACHE_MAX_ENTRIES = 1000;
+
+function cachePut(key: string, value: CacheEntry) {
+  if (!DYNAMIC_DATA_CACHE.has(key) && DYNAMIC_DATA_CACHE.size >= CACHE_MAX_ENTRIES) {
+    const oldest = DYNAMIC_DATA_CACHE.keys().next().value;
+    if (oldest) DYNAMIC_DATA_CACHE.delete(oldest);
+  }
+  DYNAMIC_DATA_CACHE.set(key, value);
+}
+
+function notConfigured(provider: string, capability: string) {
+  return {
+    success: false,
+    accepted: false,
+    outcome: "NOT_CONFIGURED",
+    provider,
+    capability,
+    message: `${provider} ${capability} is not connected to a verified provider adapter yet.`,
+  };
+}
 
 export class IntegrationService {
-  // ==========================================
-  // F-418: PayPal Payment Integration
-  // ==========================================
+  // Legacy demonstration endpoints remain callable for UI compatibility, but never fabricate
+  // provider identifiers, checkout URLs, captures or successful external side effects.
   public static async createPayPalOrder(amount: string, currency: string, itemName: string) {
-    const orderId = "PAYPAL-ORD-" + crypto.randomBytes(8).toString("hex");
-    return {
-      success: true,
-      orderId,
-      amount,
-      currency,
-      itemName,
-      approveUrl: `https://www.sandbox.paypal.com/checkoutnow?token=${orderId}`,
-    };
+    return { ...notConfigured("paypal", "create_order"), amount, currency, itemName };
   }
 
   public static async capturePayPalOrder(orderId: string) {
-    return {
-      success: true,
-      orderId,
-      status: "COMPLETED",
-      capturedAt: new Date().toISOString(),
-    };
+    return { ...notConfigured("paypal", "capture_order"), orderId };
   }
 
-  // ==========================================
-  // F-419: Stripe Payment Integration
-  // ==========================================
   public static async createStripeCheckoutSession(amount: string, currency: string, itemName: string) {
-    const sessionId = "cs_test_" + crypto.randomBytes(12).toString("hex");
-    return {
-      success: true,
-      sessionId,
-      amount,
-      currency,
-      itemName,
-      sessionUrl: `https://checkout.stripe.com/c/pay/${sessionId}`,
-    };
+    return { ...notConfigured("stripe", "checkout_session"), amount, currency, itemName };
   }
 
-  // ==========================================
-  // F-422: Dynamic Data Source Fetcher & Binder
-  // ==========================================
   public static async fetchDynamicData(targetUrl: string, jsonPath?: string) {
     const cacheKey = `${targetUrl}:${jsonPath || ""}`;
     const now = Date.now();
-
-    // Check in-memory cache for optimal performance
-    if (DYNAMIC_DATA_CACHE.has(cacheKey)) {
-      const entry = DYNAMIC_DATA_CACHE.get(cacheKey)!;
-      if (now - entry.timestamp < CACHE_TTL_MS) {
-        return entry.data;
-      }
-    }
+    const cached = DYNAMIC_DATA_CACHE.get(cacheKey);
+    if (cached && now - cached.timestamp < CACHE_TTL_MS) return cached.data;
+    if (cached) DYNAMIC_DATA_CACHE.delete(cacheKey);
 
     try {
-      const response = await fetch(targetUrl, {
-        headers: { "User-Agent": "ForgeStudio-Integration-Proxy/1.0" },
-      });
-
-      if (!response.ok) {
-        throw new Error(`External API responded with status ${response.status}`);
+      // Reuse the pinned, public-address-only HTTPS transport. Redirects and private-address
+      // resolution are rejected so this endpoint cannot be used as a simple metadata/LAN proxy.
+      const response = await pinnedJsonRequest<any>(targetUrl, {}, { timeoutMs: 8_000, maxBytes: 2 * 1024 * 1024 });
+      if (response.status < 200 || response.status >= 300) {
+        return { success: false, outcome: "UPSTREAM_REJECTED", status: response.status, url: targetUrl };
       }
-
-      const json = await response.json();
+      const json = response.body;
       let value = json;
-
       if (jsonPath && typeof json === "object" && json !== null) {
-        const parts = jsonPath.split(".");
-        let curr: any = json;
+        const parts = jsonPath.split(".").filter(Boolean).slice(0, 20);
+        let current: any = json;
         for (const part of parts) {
-          if (curr && typeof curr === "object" && part in curr) {
-            curr = curr[part];
-          } else {
-            curr = undefined;
-            break;
-          }
+          if (current && typeof current === "object" && Object.prototype.hasOwnProperty.call(current, part)) current = current[part];
+          else { current = undefined; break; }
         }
-        value = curr !== undefined ? curr : json;
+        value = current !== undefined ? current : json;
       }
-
       const result = { success: true, value, url: targetUrl, jsonPath };
-      DYNAMIC_DATA_CACHE.set(cacheKey, { data: result, timestamp: now });
+      cachePut(cacheKey, { data: result, timestamp: now });
       return result;
-    } catch (err: any) {
-      return {
-        success: false,
-        error: err?.message || "Failed to fetch dynamic data source",
-        url: targetUrl,
-      };
+    } catch (error: any) {
+      return { success: false, outcome: "FETCH_FAILED", error: error?.message || "Failed to fetch dynamic data source", url: targetUrl };
     }
   }
 
-  // ==========================================
-  // F-424: CRM Sync Integration
-  // ==========================================
   public static async submitLeadToCRM(provider: string, name: string, email: string, customFields?: Record<string, any>) {
-    const syncId = "crm_sync_" + crypto.randomBytes(6).toString("hex");
     return {
-      success: true,
-      syncId,
-      provider,
+      ...notConfigured(String(provider || "crm").toLowerCase(), "lead_delivery"),
       lead: { name, email, ...customFields },
-      message: `Lead data successfully registered with ${provider.toUpperCase()} CRM.`,
-      timestamp: new Date().toISOString(),
     };
   }
 
-  // ==========================================
-  // F-425: Webhook Dispatcher
-  // ==========================================
-  public static async dispatchWebhook(webhookUrl: string, eventType: string, payload?: any, secret?: string) {
-    const timestamp = new Date().toISOString();
-    const eventId = "evt_" + crypto.randomBytes(8).toString("hex");
-
-    const bodyData = {
-      eventId,
+  public static async dispatchWebhook(webhookUrl: string, eventType: string, payload?: any, _secret?: string) {
+    // Direct network dispatch from a synchronous request is intentionally disabled. The durable
+    // delivery worker will resolve a trusted, stored destination and persist every attempt.
+    return {
+      success: false,
+      accepted: false,
+      outcome: "DURABLE_DELIVERY_REQUIRED",
       eventType,
-      timestamp,
-      data: payload || {},
+      webhookUrl,
+      payloadPresent: payload !== undefined,
+      message: "Direct webhook dispatch is disabled. Configure a trusted durable integration delivery.",
     };
-
-    let signature = "";
-    if (secret) {
-      signature = crypto
-        .createHmac("sha256", secret)
-        .update(JSON.stringify(bodyData))
-        .digest("hex");
-    }
-
-    try {
-      const response = await fetch(webhookUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-ForgeStudio-Signature": signature,
-          "X-ForgeStudio-Event": eventType,
-        },
-        body: JSON.stringify(bodyData),
-      });
-
-      return {
-        success: response.ok,
-        status: response.status,
-        eventId,
-        message: response.ok ? "Webhook dispatched successfully" : "Webhook server returned non-200 status",
-      };
-    } catch (err: any) {
-      // Return gracefully for client demo triggers
-      return {
-        success: true,
-        status: 200,
-        eventId,
-        message: "Webhook dispatched in simulation mode.",
-      };
-    }
   }
 }
