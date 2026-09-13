@@ -31,7 +31,11 @@ const PERMANENT = new Set([
 export class PublishAdapter implements Adapter {
   readonly id = "forgestudio.database-release.v2";
   readonly sideEffects = "idempotent" as const;
-  constructor(private readonly pool: SqlPool) {}
+  private readonly pool: SqlPool;
+
+  constructor(pool: SqlPool) {
+    this.pool = pool;
+  }
 
   async deliver(context: DeliveryContext, payloadRef: string): Promise<DeliveryOutcome> {
     let reference: PublishPayloadReference;
