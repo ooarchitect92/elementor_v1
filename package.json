@@ -3,9 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "engines": {
-    "node": ">=22.16.0 <23"
-  },
+  "engines": {"node": ">=22.16.0 <23"},
   "scripts": {
     "bootstrap": "node scripts/bootstrap.mjs",
     "test": "node --experimental-strip-types --test tests/foundation/*.test.mjs",
@@ -20,6 +18,7 @@
     "core:smoke": "node scripts/smoke-core-v1.mjs",
     "runtime:smoke": "node --env-file=.env --experimental-strip-types scripts/smoke-runtime.mjs",
     "publish:smoke": "node --env-file=.env --experimental-strip-types scripts/smoke-publish-job.mjs",
+    "backend-redis:smoke": "node --env-file=.env --experimental-strip-types scripts/smoke-backend-redis.mjs",
     "worker:outbox": "node --env-file=.env --experimental-strip-types workers/outbox/main.ts",
     "worker:publish": "node --env-file=.env --experimental-strip-types workers/publish/main.ts",
     "dev:backend": "npm --prefix backend run dev",

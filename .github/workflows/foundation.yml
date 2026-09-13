@@ -37,6 +37,7 @@ jobs:
       - run: docker compose --profile analytics up -d --wait postgres redis-cache redis-control rabbitmq kafka
       - run: npm run infra:init -- --kafka
       - run: npm run infra:smoke -- --kafka
+      - run: npm run backend-redis:smoke
       - run: npm run core:smoke
       - run: npm run runtime:smoke
       - run: npm run publish:smoke
@@ -62,7 +63,6 @@ jobs:
       - if: matrix.app == 'backend'
         run: npm run db:generate
         working-directory: backend
-        env:
-          DATABASE_URL: postgresql://localhost/forgestudio_build
+        env: {DATABASE_URL: postgresql://localhost/forgestudio_build}
       - run: npm run build
         working-directory: ${{ matrix.app }}
