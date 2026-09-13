@@ -1,6 +1,7 @@
 import { prisma } from "../../config/prisma.js";
 import { AppError } from "../../utils/app-error.js";
 import { consumeFixedWindow } from "../../platform/redis-runtime.js";
+import { decryptReleaseFormDefinitions } from "../../modules/core-v1/release-privacy.js";
 import { getWebsiteById } from "../website.service.js";
 
 const WEBSITE_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -9,17 +10,12 @@ const FIELD_NAME = /^[A-Za-z0-9_.-]{1,100}$/;
 const POPUP_ID = /^[A-Za-z0-9:_-]{1,128}$/;
 const LOCAL_LIMIT_MAX_KEYS = 10_000;
 const localLimits = new Map<string, { count: number; resetAt: number }>();
-
 type JsonObject = Record<string, any>;
 
-function isObject(value: unknown): value is JsonObject {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
+function isObject(value: unknown): value is JsonObject { return Boolean(value) && typeof value === "object" && !Array.isArray(value); }
 
 export function sanitizeInput(value: any): any {
-  if (typeof value === "string") {
-    return value.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "").replace(/<[^>]+>/g, "").trim();
-  }
+  if (typeof value === "string") return value.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "").replace(/<[^>]+>/g, "").trim();
   if (Array.isArray(value)) return value.map(sanitizeInput);
   if (isObject(value)) {
     const sanitized: Record<string, any> = {};
@@ -44,8 +40,6 @@ function localFixedWindow(key: string, limit: number, windowMs: number): boolean
   return current.count <= limit;
 }
 
-// Retained as a deterministic compatibility helper for existing unit tests. Production requests
-// use the Redis control plane through enforcePublicFormLimit().
 export function checkRateLimit(subject: string, maxPerMin = 5): boolean {
   return localFixedWindow(subject, Math.max(1, Math.min(100, maxPerMin)), 60_000);
 }
@@ -64,86 +58,49 @@ async function enforcePublicFormLimit(websiteId: string, formId: string, clientI
     if (!result.allowed) throw new AppError("Too many form submissions. Please wait and try again.", 429, "RATE_LIMIT_EXCEEDED");
   } catch (error) {
     if (error instanceof AppError) throw error;
-    if (process.env.NODE_ENV === "production") {
-      throw new AppError("Form submission protection is temporarily unavailable. Please retry.", 503, "RATE_LIMIT_UNAVAILABLE");
-    }
-    if (!localFixedWindow(subject, limit, 60_000)) {
-      throw new AppError("Too many form submissions. Please wait and try again.", 429, "RATE_LIMIT_EXCEEDED");
-    }
+    if (process.env.NODE_ENV === "production") throw new AppError("Form submission protection is temporarily unavailable. Please retry.", 503, "RATE_LIMIT_UNAVAILABLE");
+    if (!localFixedWindow(subject, limit, 60_000)) throw new AppError("Too many form submissions. Please wait and try again.", 429, "RATE_LIMIT_EXCEEDED");
   }
 }
 
-interface TrustedField {
-  name: string;
-  type: string;
-  required: boolean;
-  defaultValue?: unknown;
-  options?: Array<{ value: string }>;
-}
+interface TrustedField { name: string; type: string; required: boolean; defaultValue?: unknown; options?: Array<{ value: string }> }
+interface TrustedForm { id: string; formName: string; fields: TrustedField[]; actions: JsonObject }
 
-interface TrustedForm {
-  id: string;
-  formName: string;
-  fields: TrustedField[];
-  actions: JsonObject;
-}
-
-function normalizeFormCandidate(value: JsonObject, formId: string): TrustedForm | null {
-  if (String(value.id || "") !== formId || !Array.isArray(value.fields)) return null;
-  if (value.fields.length < 1 || value.fields.length > 100) throw new AppError("Published form definition is invalid", 409, "FORM_DEFINITION_INVALID");
+function normalizeForm(value: JsonObject, formId: string): TrustedForm {
+  if (String(value.id || "") !== formId || !Array.isArray(value.fields) || value.fields.length < 1 || value.fields.length > 100) {
+    throw new AppError("Published form definition is invalid", 409, "FORM_DEFINITION_INVALID");
+  }
   const fields: TrustedField[] = value.fields.map((field: any) => {
-    if (!isObject(field) || !FIELD_NAME.test(String(field.name || ""))) {
-      throw new AppError("Published form definition is invalid", 409, "FORM_DEFINITION_INVALID");
-    }
+    if (!isObject(field) || !FIELD_NAME.test(String(field.name || ""))) throw new AppError("Published form definition is invalid", 409, "FORM_DEFINITION_INVALID");
     const options = Array.isArray(field.options)
       ? field.options.slice(0, 200).map((option: any) => ({ value: String(isObject(option) ? option.value : option) }))
       : undefined;
-    return {
-      name: String(field.name),
-      type: String(field.type || "text"),
-      required: field.required === true,
-      defaultValue: field.defaultValue,
-      options,
-    };
+    return { name: String(field.name), type: String(field.type || "text"), required: field.required === true, defaultValue: field.defaultValue, options };
   });
-  return {
-    id: formId,
-    formName: String(value.formName || "Contact Form").slice(0, 200),
-    fields,
-    actions: isObject(value.actions) ? value.actions : {},
-  };
-}
-
-function findTrustedForm(payload: unknown, formId: string): TrustedForm | null {
-  const stack: Array<{ value: unknown; depth: number }> = [{ value: payload, depth: 0 }];
-  const seen = new Set<object>();
-  let visited = 0;
-  while (stack.length > 0) {
-    const current = stack.pop()!;
-    if (current.depth > 30 || ++visited > 25_000) throw new AppError("Published form definition is too complex", 409, "FORM_DEFINITION_TOO_COMPLEX");
-    if (!current.value || typeof current.value !== "object") continue;
-    if (seen.has(current.value as object)) continue;
-    seen.add(current.value as object);
-    if (isObject(current.value)) {
-      const candidate = normalizeFormCandidate(current.value, formId);
-      if (candidate) return candidate;
-      for (const child of Object.values(current.value)) stack.push({ value: child, depth: current.depth + 1 });
-    } else if (Array.isArray(current.value)) {
-      for (const child of current.value) stack.push({ value: child, depth: current.depth + 1 });
-    }
-  }
-  return null;
+  return { id: formId, formName: String(value.formName || "Contact Form").slice(0, 200), fields, actions: isObject(value.actions) ? value.actions : {} };
 }
 
 async function loadTrustedForm(websiteId: string, formId: string): Promise<TrustedForm> {
   const rows = await prisma.$queryRawUnsafe<any[]>(
-    `SELECT payload FROM site_releases WHERE "websiteId"=$1::uuid AND status='ACTIVE' LIMIT 1`,
-    websiteId,
+    `SELECT r.id AS "releaseId",r."websiteId",
+            p."formDefinitionsCiphertext" AS ciphertext,p."formDefinitionsIv" AS iv,
+            p."formDefinitionsTag" AS tag,p."keyVersion"
+     FROM site_releases r
+     JOIN site_release_private p ON p."releaseId"=r.id
+     WHERE r."websiteId"=$1::uuid AND r.status='ACTIVE' LIMIT 1`, websiteId,
   );
-  if (!rows[0]) throw new AppError("Published form not found", 404, "PUBLISHED_FORM_NOT_FOUND");
-  const form = findTrustedForm(rows[0].payload, formId);
-  if (!form) throw new AppError("Published form not found", 404, "PUBLISHED_FORM_NOT_FOUND");
-  return form;
+  const row = rows[0];
+  if (!row) throw new AppError("Published form configuration is unavailable; republish the website", 409, "PUBLISHED_FORM_CONFIGURATION_MISSING");
+  try {
+    const definitions = decryptReleaseFormDefinitions(row);
+    const value = definitions[formId];
+    if (!isObject(value)) throw new AppError("Published form not found", 404, "PUBLISHED_FORM_NOT_FOUND");
+    return normalizeForm(value, formId);
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    console.error(JSON.stringify({ event: "release.private.decrypt_failed", releaseId: row.releaseId }));
+    throw new AppError("Published form configuration is temporarily unavailable", 503, "FORM_CONFIGURATION_UNAVAILABLE");
+  }
 }
 
 function validateAndSelectFields(form: TrustedForm, submitted: unknown): JsonObject {
@@ -152,17 +109,12 @@ function validateAndSelectFields(form: TrustedForm, submitted: unknown): JsonObj
     throw new AppError("Form submission is too large", 413, "FORM_SUBMISSION_TOO_LARGE");
   }
   const definitions = new Map(form.fields.map((field) => [field.name, field]));
-  for (const name of Object.keys(submitted)) {
-    if (!definitions.has(name)) throw new AppError("Submission contains an unknown field", 400, "UNKNOWN_FORM_FIELD");
-  }
-
+  for (const name of Object.keys(submitted)) if (!definitions.has(name)) throw new AppError("Submission contains an unknown field", 400, "UNKNOWN_FORM_FIELD");
   const selected: JsonObject = {};
   for (const field of form.fields) {
     const raw = submitted[field.name] ?? field.defaultValue;
     const empty = raw === undefined || raw === null || raw === "";
-    if (field.required && (empty || (field.type === "checkbox" && raw !== true))) {
-      throw new AppError(`Required field is missing: ${field.name}`, 400, "REQUIRED_FORM_FIELD_MISSING");
-    }
+    if (field.required && (empty || (field.type === "checkbox" && raw !== true))) throw new AppError(`Required field is missing: ${field.name}`, 400, "REQUIRED_FORM_FIELD_MISSING");
     if (empty) continue;
     if (field.type === "checkbox") {
       if (typeof raw !== "boolean") throw new AppError("Invalid checkbox field", 400, "INVALID_FORM_FIELD");
@@ -172,13 +124,10 @@ function validateAndSelectFields(form: TrustedForm, submitted: unknown): JsonObj
     if (typeof raw !== "string" && typeof raw !== "number") throw new AppError("Invalid form field", 400, "INVALID_FORM_FIELD");
     const value = String(raw);
     if (value.length > 20_000) throw new AppError("Form field is too large", 413, "FORM_FIELD_TOO_LARGE");
-    if (field.type === "email" && (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) || value.length > 320)) {
-      throw new AppError("Invalid email field", 400, "INVALID_FORM_FIELD");
-    }
+    if (field.type === "email" && (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) || value.length > 320)) throw new AppError("Invalid email field", 400, "INVALID_FORM_FIELD");
     if (field.type === "number" && !Number.isFinite(Number(value))) throw new AppError("Invalid number field", 400, "INVALID_FORM_FIELD");
-    if ((field.type === "select" || field.type === "radio") && field.options?.length) {
-      const allowed = new Set(field.options.map((option) => option.value));
-      if (!allowed.has(value)) throw new AppError("Invalid form option", 400, "INVALID_FORM_FIELD");
+    if ((field.type === "select" || field.type === "radio") && field.options?.length && !new Set(field.options.map((option) => option.value)).has(value)) {
+      throw new AppError("Invalid form option", 400, "INVALID_FORM_FIELD");
     }
     selected[field.name] = value;
   }
@@ -195,33 +144,23 @@ function safeResponseActions(actions: JsonObject) {
   const popupId = POPUP_ID.test(popupValue) ? popupValue : undefined;
   const active = Array.isArray(actions.activeActions) ? actions.activeActions.map(String) : ["database"];
   const external = active.some((name) => name === "email" || name === "webhook") ? "NOT_CONFIGURED" : "NONE_REQUESTED";
-  return { successMessage, redirectUrl, openInNewTab: redirectUrl ? redirectConfig.openInNewTab === true : false, popupId, external };
+  return { successMessage, redirectUrl, openInNewTab: Boolean(redirectUrl && redirectConfig.openInNewTab === true), popupId, external };
 }
 
 export interface FormSubmitPayload {
-  websiteId: string;
-  formId: string;
-  formName?: string;
-  fields: Record<string, any>;
-  actions?: JsonObject;
-  spamProtection?: JsonObject;
-  honeypotValue?: string;
+  websiteId: string; formId: string; formName?: string; fields: Record<string, any>;
+  actions?: JsonObject; spamProtection?: JsonObject; honeypotValue?: string;
   metadata?: { ip?: string; userAgent?: string; referer?: string };
 }
 
 export async function processFormSubmission(payload: FormSubmitPayload) {
   const { websiteId, formId, fields, honeypotValue, metadata } = payload;
-  if (!WEBSITE_UUID.test(String(websiteId || "")) || !FORM_ID.test(String(formId || ""))) {
-    throw new AppError("Website ID and Form ID are invalid", 400, "INVALID_FORM_SUBMISSION");
-  }
+  if (!WEBSITE_UUID.test(String(websiteId || "")) || !FORM_ID.test(String(formId || ""))) throw new AppError("Website ID and Form ID are invalid", 400, "INVALID_FORM_SUBMISSION");
   const clientIp = String(metadata?.ip || "unknown").slice(0, 128);
   await enforcePublicFormLimit(websiteId, formId, clientIp);
-
-  // Honeypot and rate policy are server-controlled. Public requests cannot disable or raise them.
   if (typeof honeypotValue === "string" && honeypotValue.trim().length > 0) {
     return { success: true, accepted: false, spamDiscarded: true, message: "Thank you! Your submission has been received." };
   }
-
   const trustedForm = await loadTrustedForm(websiteId, formId);
   const sanitizedFields = validateAndSelectFields(trustedForm, fields);
   const responseActions = safeResponseActions(trustedForm.actions);
@@ -231,26 +170,18 @@ export async function processFormSubmission(payload: FormSubmitPayload) {
     referer: metadata?.referer ? sanitizeInput(String(metadata.referer)).slice(0, 2_048) : "",
     submittedAt: new Date().toISOString(),
   };
-
   try {
     const rows: any[] = await prisma.$queryRaw`
-      INSERT INTO form_submissions (id, "websiteId", "formId", "formName", data, metadata, "createdAt")
-      VALUES (gen_random_uuid(), ${websiteId}::uuid, ${formId}, ${trustedForm.formName}, ${JSON.stringify(sanitizedFields)}::jsonb, ${JSON.stringify(sanitizedMetadata)}::jsonb, NOW())
-      RETURNING id, "createdAt"
+      INSERT INTO form_submissions(id,"websiteId","formId","formName",data,metadata,"createdAt")
+      VALUES(gen_random_uuid(),${websiteId}::uuid,${formId},${trustedForm.formName},${JSON.stringify(sanitizedFields)}::jsonb,${JSON.stringify(sanitizedMetadata)}::jsonb,NOW())
+      RETURNING id,"createdAt"
     `;
     const receipt = rows[0];
     if (!receipt?.id) throw new Error("No persistence receipt returned");
     return {
-      success: true,
-      accepted: true,
-      persisted: true,
-      submissionId: receipt.id,
-      acceptedAt: receipt.createdAt,
-      message: responseActions.successMessage,
-      actions: { database: "PERSISTED", external: responseActions.external },
-      redirectUrl: responseActions.redirectUrl,
-      openInNewTab: responseActions.openInNewTab,
-      popupId: responseActions.popupId,
+      success: true,accepted: true,persisted: true,submissionId: receipt.id,acceptedAt: receipt.createdAt,
+      message: responseActions.successMessage,actions: { database: "PERSISTED", external: responseActions.external },
+      redirectUrl: responseActions.redirectUrl,openInNewTab: responseActions.openInNewTab,popupId: responseActions.popupId,
     };
   } catch (error) {
     console.error("Form persistence failed", error);
@@ -261,7 +192,7 @@ export async function processFormSubmission(payload: FormSubmitPayload) {
 export async function getWebsiteSubmissions(websiteId: string, userId: string) {
   await getWebsiteById(websiteId, userId);
   const submissions: any[] = await prisma.$queryRaw`
-    SELECT id, "websiteId", "formId", "formName", data, metadata, "createdAt"
+    SELECT id,"websiteId","formId","formName",data,metadata,"createdAt"
     FROM form_submissions WHERE "websiteId"=${websiteId}::uuid ORDER BY "createdAt" DESC
   `;
   return submissions || [];
