@@ -23,6 +23,7 @@
     "worker:outbox": "node --env-file=.env --experimental-strip-types workers/outbox/main.ts",
     "worker:publish": "node --env-file=.env --experimental-strip-types workers/publish/main.ts",
     "worker:integration": "node --env-file=.env --experimental-strip-types workers/integrations/main.ts",
+    "worker:wordpress": "node --env-file=.env --experimental-strip-types workers/wordpress/main.ts",
     "dev:backend": "npm --prefix backend run dev",
     "dev:frontend": "npm --prefix frontend run dev",
     "build:foundation": "tsc -p tsconfig.foundation.build.json",

@@ -14,6 +14,7 @@ import {
   getLatestWordPressCompatibilityPassport,
   listWordPressSourceSnapshots,
 } from "./wordpress-passport.service.js";
+import { queueWordPressSync } from "./wordpress-sync.service.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -99,6 +100,25 @@ router.get("/websites/:websiteId/wordpress/connections/:connectionId/passport", 
       uid(res),
     );
     return res.json({ success: true, passport });
+  } catch (error) { next(error); }
+});
+
+router.post("/websites/:websiteId/wordpress/connections/:connectionId/sync", async (req, res, next) => {
+  try {
+    const job = await queueWordPressSync(
+      String(req.params.websiteId),
+      String(req.params.connectionId),
+      uid(res),
+      {
+        requestKey: String(req.body?.requestKey || req.headers["idempotency-key"] || ""),
+        sourceType: String(req.body?.sourceType || ""),
+        sourceId: String(req.body?.sourceId || ""),
+        expectedSourceHash: String(req.body?.expectedSourceHash || ""),
+        desired: req.body?.desired,
+        requestId: res.locals.requestId,
+      },
+    );
+    return res.status(job.duplicate ? 200 : 202).json({ success: true, job });
   } catch (error) { next(error); }
 });
 
