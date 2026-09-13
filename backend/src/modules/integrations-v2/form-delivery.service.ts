@@ -78,18 +78,18 @@ export async function persistFormSubmissionAndDeliveries(inputValue: PersistForm
 
   return prisma.$transaction(async (tx: any) => {
     await ensurePlatformTenant(tx, input.tenantId, input.tenantId, "OWNER");
-    const activeRelease = await tx.$queryRawUnsafe<any[]>(
+    const activeRelease = await tx.$queryRawUnsafe(
       `SELECT id FROM site_releases
        WHERE id=$1::uuid AND "websiteId"=$2::uuid AND status='ACTIVE'
        FOR SHARE`,
       input.releaseId,
       input.websiteId,
-    );
+    ) as any[];
     if (!activeRelease[0]) {
       throw new AppError("Published form changed while submitting; please retry", 409, "PUBLISHED_RELEASE_CHANGED");
     }
 
-    const inserted = await tx.$queryRawUnsafe<any[]>(
+    const inserted = await tx.$queryRawUnsafe(
       `INSERT INTO form_submissions(
          id,"websiteId","tenantId","releaseId","formId","formName",data,metadata,
          "idempotencyKey","requestHash","createdAt"
@@ -107,22 +107,22 @@ export async function persistFormSubmissionAndDeliveries(inputValue: PersistForm
       JSON.stringify(input.metadata),
       input.requestKey,
       submissionRequestHash,
-    );
+    ) as any[];
 
     if (!inserted[0]) {
-      const existing = await tx.$queryRawUnsafe<any[]>(
+      const existing = await tx.$queryRawUnsafe(
         `SELECT id,"createdAt","requestHash"
          FROM form_submissions
          WHERE "websiteId"=$1::uuid AND "idempotencyKey"=$2
          LIMIT 1`,
         input.websiteId,
         input.requestKey,
-      );
+      ) as any[];
       const row = existing[0];
       if (!row || String(row.requestHash) !== submissionRequestHash) {
         throw new AppError("Idempotency-Key was already used with a different submission", 409, "IDEMPOTENCY_KEY_REUSED");
       }
-      const counts = await tx.$queryRawUnsafe<any[]>(
+      const counts = await tx.$queryRawUnsafe(
         `SELECT
            (SELECT COUNT(*)::integer FROM platform.integration_delivery_resources
             WHERE tenant_id=$1::uuid AND submission_id=$2::uuid) AS queued,
@@ -130,7 +130,7 @@ export async function persistFormSubmissionAndDeliveries(inputValue: PersistForm
             WHERE tenant_id=$1::uuid AND submission_id=$2::uuid) AS rejected`,
         input.tenantId,
         row.id,
-      );
+      ) as any[];
       return publicResult(row, true, Number(counts[0]?.queued || 0), Number(counts[0]?.rejected || 0));
     }
 
