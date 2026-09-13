@@ -1,19 +1,35 @@
 import assert from "node:assert/strict";
+import { createCipheriv, randomBytes } from "node:crypto";
 import test from "node:test";
 
 import { planTrustedDeliveryActions } from "../../backend/src/modules/integrations-v2/action-planner.ts";
-import { encryptDeliveryConfig } from "../../backend/src/modules/integrations-v2/delivery-crypto.ts";
 import { decryptDeliveryConfig } from "../../workers/integrations/secret-envelope.ts";
 import { isPublicAddress } from "../../packages/platform/safe-http.ts";
 
 const tenantId = "11111111-1111-4111-8111-111111111111";
 const jobId = "22222222-2222-4222-8222-222222222222";
+const key = Buffer.alloc(32, 7);
+process.env.INTEGRATION_SECRET_KEY_BASE64 = key.toString("base64");
 
-process.env.INTEGRATION_SECRET_KEY_BASE64 = Buffer.alloc(32, 7).toString("base64");
+function encryptedFixture(value, scopedTenantId, scopedJobId) {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", key, iv);
+  cipher.setAAD(Buffer.from(`forgestudio:delivery:v1:${scopedTenantId}:${scopedJobId}`, "utf8"));
+  const ciphertext = Buffer.concat([
+    cipher.update(Buffer.from(JSON.stringify(value), "utf8")),
+    cipher.final(),
+  ]);
+  return {
+    ciphertext: ciphertext.toString("base64"),
+    iv: iv.toString("base64"),
+    tag: cipher.getAuthTag().toString("base64"),
+    keyVersion: 1,
+  };
+}
 
-test("delivery configuration encryption round-trips only with matching scope", () => {
+test("delivery configuration encryption is authenticated to tenant and job scope", () => {
   const config = { provider: "WEBHOOK", endpointUrl: "https://example.com/lead", secretKey: "secret" };
-  const encrypted = encryptDeliveryConfig(config, tenantId, jobId);
+  const encrypted = encryptedFixture(config, tenantId, jobId);
   assert.deepEqual(decryptDeliveryConfig(encrypted, tenantId, jobId), config);
   assert.throws(
     () => decryptDeliveryConfig(encrypted, tenantId, "33333333-3333-4333-8333-333333333333"),
