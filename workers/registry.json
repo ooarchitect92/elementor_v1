@@ -1,5 +1,5 @@
 {
-  "version": 3,
+  "version": 4,
   "enabled": true,
   "leaseRecoveryImplemented": true,
   "infrastructureRuntimes": [
@@ -14,9 +14,10 @@
     {
       "queue": "publish.build",
       "entrypoint": "workers/publish/main.ts",
-      "adapter": "forgestudio.database-release.v1",
+      "adapter": "forgestudio.database-release.v2",
       "sideEffects": "idempotent",
-      "status": "implemented-and-integration-gated"
+      "status": "implemented-and-integration-gated",
+      "privateConfig": "aes-256-gcm-release-bound"
     }
   ],
   "disabledQueues": [
@@ -25,5 +26,5 @@
     "integration.deliver",
     "maintenance.reconcile"
   ],
-  "reason": "The database-backed publish adapter is enabled with durable lease, outbox and idempotent release evidence. Other domain adapters remain disabled until each has provider-specific failure and reconciliation evidence."
+  "reason": "The publish adapter is enabled with durable leases, immutable inputs, public/private release separation, encrypted private form configuration, outbox delivery, idempotent replay and supersession fencing. Other domain adapters remain disabled until each has provider-specific failure and reconciliation evidence."
 }
