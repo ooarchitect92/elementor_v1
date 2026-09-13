@@ -7,6 +7,8 @@ import { ensurePlatformTenant } from "../../services/platform-tenant.service.js"
 const REQUEST_KEY = /^[A-Za-z0-9:_-]{16,128}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+type QueryRow = Record<string, any>;
+
 interface PublishAccess {
   tenantId: string;
   permission: "OWNER" | "ADMIN";
@@ -40,7 +42,7 @@ function requestFingerprint(payloadRef: string): string {
     .digest("hex");
 }
 
-function publicJob(row: any, replayed = false) {
+function publicJob(row: QueryRow, replayed = false) {
   return {
     id: String(row.id),
     websiteId: String(row.resource_id),
@@ -63,7 +65,7 @@ async function publishAccess(websiteIdInput: string, userId: string): Promise<Pu
   if (permission !== "OWNER" && permission !== "ADMIN") {
     throw new AppError("Only owners and admins can publish", 403, "PUBLISH_FORBIDDEN");
   }
-  const rows = await prisma.$queryRawUnsafe<any[]>(
+  const rows = await prisma.$queryRawUnsafe<QueryRow[]>(
     `SELECT "userId","currentRevision" FROM websites WHERE id=$1::uuid LIMIT 1`,
     websiteId,
   );
@@ -124,7 +126,7 @@ export async function createPublishJob(
     const actorRole = access.permission === "OWNER" ? "OWNER" : "ADMIN";
     await ensurePlatformTenant(tx, access.tenantId, userId, actorRole);
 
-    const inserted = await tx.$queryRawUnsafe<any[]>(
+    const inserted = await tx.$queryRawUnsafe(
       `INSERT INTO platform.jobs(
          tenant_id,id,job_type,idempotency_key,request_hash,payload_ref,
          trace_id,deadline,state,side_effects,max_attempts
@@ -138,10 +140,10 @@ export async function createPublishJob(
       payloadRef,
       traceId,
       deadline,
-    );
+    ) as QueryRow[];
 
     if (!inserted[0]) {
-      const existing = await tx.$queryRawUnsafe<any[]>(
+      const existing = await tx.$queryRawUnsafe(
         `SELECT j.id,j.state,j.attempt,j.max_attempts,j.result,j.deadline,j.created_at,j.updated_at,
                 j.request_hash,j.payload_ref,r.resource_id,r.source_revision
          FROM platform.jobs j
@@ -151,7 +153,7 @@ export async function createPublishJob(
          LIMIT 1`,
         access.tenantId,
         requestKey,
-      );
+      ) as QueryRow[];
       const row = existing[0];
       if (
         !row ||
@@ -211,7 +213,7 @@ export async function getPublishJob(websiteIdInput: string, userId: string, jobI
   const access = await publishAccess(websiteId, userId);
   return prisma.$transaction(async (tx: any) => {
     await tx.$queryRawUnsafe("SELECT set_config('app.tenant_id', $1, true)", access.tenantId);
-    const rows = await tx.$queryRawUnsafe<any[]>(
+    const rows = await tx.$queryRawUnsafe(
       `SELECT j.id,j.state,j.attempt,j.max_attempts,j.result,j.deadline,j.created_at,j.updated_at,
               r.resource_id,r.source_revision
        FROM platform.jobs j
@@ -223,7 +225,7 @@ export async function getPublishJob(websiteIdInput: string, userId: string, jobI
       access.tenantId,
       jobId,
       websiteId,
-    );
+    ) as QueryRow[];
     if (!rows[0]) throw new AppError("Publish job not found", 404, "PUBLISH_JOB_NOT_FOUND");
     return publicJob(rows[0]);
   });
@@ -235,7 +237,7 @@ export async function listPublishJobs(websiteIdInput: string, userId: string, li
   const limit = Math.max(1, Math.min(100, Math.trunc(limitInput || 30)));
   return prisma.$transaction(async (tx: any) => {
     await tx.$queryRawUnsafe("SELECT set_config('app.tenant_id', $1, true)", access.tenantId);
-    const rows = await tx.$queryRawUnsafe<any[]>(
+    const rows = await tx.$queryRawUnsafe(
       `SELECT j.id,j.state,j.attempt,j.max_attempts,j.result,j.deadline,j.created_at,j.updated_at,
               r.resource_id,r.source_revision
        FROM platform.jobs j
@@ -247,7 +249,7 @@ export async function listPublishJobs(websiteIdInput: string, userId: string, li
       access.tenantId,
       websiteId,
       limit,
-    );
-    return rows.map((row) => publicJob(row));
+    ) as QueryRow[];
+    return rows.map((row: QueryRow) => publicJob(row));
   });
 }
