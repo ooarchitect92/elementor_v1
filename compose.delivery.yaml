@@ -1,0 +1,25 @@
+# Delivery-runtime overlay. Use with compose.yaml; this does not expose public interfaces.
+services:
+  postgres:
+    volumes:
+      - ./infrastructure/postgres/004_delivery_runtime.sql:/docker-entrypoint-initdb.d/004_delivery_runtime.sql:ro
+
+  integration-worker:
+    profiles: ["workers"]
+    build: {context: ., dockerfile: infrastructure/docker/worker.Dockerfile}
+    command: ["node", "--experimental-strip-types", "workers/integrations/main.ts"]
+    depends_on:
+      postgres: {condition: service_healthy}
+      rabbitmq: {condition: service_healthy}
+    env_file: ./.env
+    environment:
+      POSTGRES_HOST: postgres
+      RABBITMQ_HOST: rabbitmq
+      INTEGRATION_SECRET_KEY_BASE64: ${INTEGRATION_SECRET_KEY_BASE64:?Run npm run bootstrap}
+      SERVICE_NAME: forgestudio-integration-worker
+    read_only: true
+    tmpfs: ["/tmp"]
+    init: true
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    restart: unless-stopped
