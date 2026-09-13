@@ -1,7 +1,7 @@
 name: Foundation gates
 on:
   push:
-    branches: [main, 'foundation/**', 'implementation/**', 'feat/**', 'fix/**']
+    branches: [main, 'foundation/**', 'feat/**', 'fix/**', 'implementation/**']
   pull_request:
   workflow_dispatch:
 permissions:
@@ -12,29 +12,40 @@ concurrency:
 jobs:
   contracts:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with: {node-version: '22', cache: npm}
       - run: npm ci --ignore-scripts
       - run: npm run check
-      - run: php -l wordpress-plugin/forgestudio-connect/forgestudio-connect.php && php -l wordpress-plugin/forgestudio-connect/includes/class-rest.php && php tests/foundation/wordpress.test.php
+      - name: Validate WordPress connector
+        run: |
+          php -l wordpress-plugin/forgestudio-connect/forgestudio-connect.php
+          php -l wordpress-plugin/forgestudio-connect/includes/class-rest.php
+          php -l wordpress-plugin/forgestudio-connect/includes/class-rest-v4.php
+          php -l wordpress-plugin/forgestudio-connect/includes/class-sync.php
+          php tests/foundation/wordpress.test.php
       - run: npm run inventory
+
   infrastructure:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
     env:
+      # Deliberately bounded disposable assignment for CI. Production cells must set their own scope.
       WORKER_TENANT_IDS: 11111111-1111-4111-8111-111111111111
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
-        with: {node-version: '22', cache: npm}
+        with: {node-version: '22'}
       - run: npm ci --ignore-scripts
       - run: npm run bootstrap
-      - run: docker compose --profile analytics --profile wordpress --profile workers config --quiet
-      - run: docker compose --profile analytics --profile workers build outbox-worker publish-worker
-      - run: docker compose --profile analytics up -d --wait postgres redis-cache redis-control rabbitmq kafka
+      - name: Validate all Compose profiles
+        run: docker compose -f compose.yaml -f compose.delivery.yaml --profile analytics --profile wordpress --profile workers config --quiet
+      - name: Build all worker images
+        run: docker compose -f compose.yaml -f compose.delivery.yaml --profile analytics --profile workers build outbox-worker publish-worker integration-worker wordpress-sync-worker
+      - name: Start durable dependencies
+        run: docker compose -f compose.yaml -f compose.delivery.yaml --profile analytics up -d --wait postgres redis-cache redis-control rabbitmq kafka
       - run: npm run infra:init -- --kafka
       - run: npm run infra:smoke -- --kafka
       - run: npm run backend-redis:smoke
@@ -43,14 +54,14 @@ jobs:
       - run: npm run publish:smoke
       - name: Diagnostic logs on failure
         if: failure()
-        run: docker compose --profile analytics --profile workers logs --tail=200 postgres redis-cache redis-control rabbitmq kafka outbox-worker publish-worker || true
+        run: docker compose -f compose.yaml -f compose.delivery.yaml logs --tail=100 postgres redis-cache redis-control rabbitmq kafka
       - name: Remove disposable CI fixtures
         if: always()
-        run: docker compose --profile analytics --profile workers down -v || true
+        run: docker compose -f compose.yaml -f compose.delivery.yaml down -v
+
   legacy-baseline:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    continue-on-error: true
     strategy:
       fail-fast: false
       matrix: {app: [backend, frontend]}
@@ -63,6 +74,7 @@ jobs:
       - if: matrix.app == 'backend'
         run: npm run db:generate
         working-directory: backend
-        env: {DATABASE_URL: postgresql://localhost/forgestudio_build}
+        env:
+          DATABASE_URL: postgresql://localhost/forgestudio_build
       - run: npm run build
         working-directory: ${{ matrix.app }}
