@@ -31,6 +31,9 @@ jobs:
   infrastructure:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      # Deliberately bounded disposable assignment for CI. Production cells must set their own scope.
+      WORKER_TENANT_IDS: 11111111-1111-4111-8111-111111111111
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
