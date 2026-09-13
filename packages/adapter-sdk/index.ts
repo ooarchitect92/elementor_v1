@@ -1,6 +1,6 @@
 export type DeliveryOutcome =
   | {status: 'DELIVERED'; receipt: string}
-  | {status: 'RETRYABLE'; code: string; retryAfterMs?: number}
+  | {status: 'RETRYABLE'; code: string; retryAfterMs?: number | undefined}
   | {status: 'FAILED_PERMANENTLY'; code: string}
   | {status: 'OUTCOME_UNKNOWN'; code: string};
 export interface DeliveryContext {
