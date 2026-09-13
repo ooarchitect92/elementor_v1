@@ -33,7 +33,7 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm run bootstrap
       - run: docker compose --profile analytics --profile wordpress --profile workers config --quiet
-      - run: docker compose --profile workers build outbox-worker publish-worker
+      - run: docker compose --profile analytics --profile workers build outbox-worker publish-worker
       - run: docker compose --profile analytics up -d --wait postgres redis-cache redis-control rabbitmq kafka
       - run: npm run infra:init -- --kafka
       - run: npm run infra:smoke -- --kafka
