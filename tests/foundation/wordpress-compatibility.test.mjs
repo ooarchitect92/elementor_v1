@@ -13,10 +13,10 @@ const sources = [
       },
     },
   },
-] as const;
+];
 
 test("discovers Gutenberg core and third-party blocks", () => {
-  const usage = discoverWordPressBlocks([...sources]);
+  const usage = discoverWordPressBlocks(sources);
   assert.equal(usage["core/paragraph"], 1);
   assert.equal(usage["woocommerce/product-price"], 1);
   assert.equal(usage["core/navigation"], 1);
@@ -35,8 +35,8 @@ test("compatibility passport is deterministic and exposes migration boundaries",
     elementor: { active: true, documents: 12 },
     woocommerce: { active: true },
   };
-  const first = buildCompatibilityPassport(inventory, [...sources]);
-  const second = buildCompatibilityPassport(inventory, [...sources]);
+  const first = buildCompatibilityPassport(inventory, sources);
+  const second = buildCompatibilityPassport(inventory, sources);
   assert.deepEqual(first, second);
   assert.equal(first.summary.elementorDetected, true);
   assert.equal(first.summary.woocommerceDetected, true);
