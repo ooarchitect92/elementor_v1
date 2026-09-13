@@ -18,15 +18,72 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           ref: implementation/core-v1
+          fetch-depth: 1
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '22'
           cache: npm
+      - name: Prepare disposable local credentials
+        run: npm run bootstrap
       - name: Verify and apply reviewed publish-job slice
         shell: bash
+        env:
+          ARCHIVE_BLOB_SHA: 8cc1717d842f82570934e0fc28406a8ffe7828cf
         run: |
-          echo '493e24ae2744609497e003c41edf43ad961dbbd0e66c9b97924986f58a61e2cb  .github/runtime/publish-job-slice.tar.gz' | sha256sum -c -
-          tar -xzf .github/runtime/publish-job-slice.tar.gz
+          set -euo pipefail
+          archive=.github/runtime/publish-job-slice.tar.gz
+          test "$(git hash-object "$archive")" = "$ARCHIVE_BLOB_SHA"
+          python3 - <<'PY'
+          from pathlib import PurePosixPath
+          import tarfile
+
+          archive = '.github/runtime/publish-job-slice.tar.gz'
+          allowed = {
+              '.env.example',
+              'backend/.env.example',
+              'backend/prisma/manual/004_platform_tenant_jobs.sql',
+              'backend/src/app.ts',
+              'backend/src/services/platform-tenant.service.ts',
+              'backend/src/modules/jobs-v2/jobs.service.ts',
+              'backend/src/modules/jobs-v2/jobs.routes.ts',
+              'compose.yaml',
+              'docs/api/openapi.json',
+              'docs/runbooks/MESSAGING_RUNTIME.md',
+              'infrastructure/docker/worker.Dockerfile',
+              'infrastructure/postgres/003_job_resources.sql',
+              'package.json',
+              'scripts/check-foundation.mjs',
+              'scripts/smoke-publish-job.mjs',
+              'tests/foundation/publish-adapter.test.mjs',
+              'workers/publish/main.ts',
+              'workers/publish/publish-adapter.ts',
+              'workers/registry.json',
+              'workers/shared/postgres.ts',
+          }
+          total = 0
+          with tarfile.open(archive, 'r:gz') as bundle:
+              members = bundle.getmembers()
+              if not members or len(members) > 80:
+                  raise SystemExit('Unexpected archive member count')
+              for member in members:
+                  path = PurePosixPath(member.name)
+                  if path.is_absolute() or '..' in path.parts:
+                      raise SystemExit(f'Unsafe archive path: {member.name}')
+                  if member.issym() or member.islnk() or member.isdev():
+                      raise SystemExit(f'Unsupported archive member: {member.name}')
+                  normalized = str(path)
+                  if member.isfile() and normalized not in allowed:
+                      raise SystemExit(f'Unapproved archive file: {normalized}')
+                  if member.isdir() and not any(item == normalized or item.startswith(normalized + '/') for item in allowed):
+                      raise SystemExit(f'Unapproved archive directory: {normalized}')
+                  total += max(0, member.size)
+              files = {str(PurePosixPath(m.name)) for m in members if m.isfile()}
+              if files != allowed:
+                  raise SystemExit(f'Archive inventory mismatch: missing={sorted(allowed-files)} extra={sorted(files-allowed)}')
+              if total > 2_000_000:
+                  raise SystemExit('Archive is unexpectedly large')
+          PY
+          tar --extract --gzip --file "$archive" --no-same-owner --no-same-permissions
           while IFS= read -r file; do
             node --experimental-strip-types --check "$file" >/dev/null
           done < <(find packages workers -type f -name '*.ts' -print | sort)
@@ -46,7 +103,6 @@ jobs:
       - name: Verify worker images and real publish lifecycle
         shell: bash
         run: |
-          npm run bootstrap
           docker compose --profile analytics --profile wordpress --profile workers config --quiet
           docker compose --profile workers build outbox-worker publish-worker
           docker compose --profile analytics up -d --wait postgres redis-cache redis-control rabbitmq kafka
@@ -57,13 +113,14 @@ jobs:
           npm run publish:smoke
       - name: Diagnostic logs on failure
         if: failure()
-        run: docker compose --profile analytics --profile workers logs --tail=240 postgres redis-cache redis-control rabbitmq kafka outbox-worker publish-worker
+        run: docker compose --profile analytics --profile workers logs --tail=240 postgres redis-cache redis-control rabbitmq kafka outbox-worker publish-worker || true
       - name: Remove disposable integration fixtures
         if: always()
-        run: docker compose --profile analytics --profile workers down -v
-      - name: Commit verified non-workflow files
+        run: docker compose --profile analytics --profile workers down -v || true
+      - name: Commit verified implementation and remove one-time bootstrap
         shell: bash
         run: |
+          set -euo pipefail
           git config user.name 'ForgeStudio CI'
           git config user.email 'actions@users.noreply.github.com'
           git add \
@@ -87,6 +144,8 @@ jobs:
             workers/publish/publish-adapter.ts \
             workers/registry.json \
             workers/shared/postgres.ts
+          git rm .github/workflows/core-v1-publish-job-integration.yml .github/runtime/publish-job-slice.tar.gz
           git diff --cached --check
-          git commit -m 'feat(publish): add durable website-scoped publish jobs'
+          test -n "$(git diff --cached --name-only)"
+          git commit -m 'feat(publish): add verified durable website publish jobs'
           git push origin HEAD:implementation/core-v1
