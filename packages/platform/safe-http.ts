@@ -73,7 +73,7 @@ async function resolvePublicAddress(hostname: string): Promise<{ address: string
     if (!isPublicAddress(hostname)) throw new SafeHttpError("OUTBOUND_ADDRESS_FORBIDDEN");
     return { address: hostname, family: isIP(hostname) as 4 | 6 };
   }
-  let records: Awaited<ReturnType<typeof lookup>>;
+  let records: Array<{ address: string; family: number }>;
   try {
     records = await lookup(hostname, { all: true, verbatim: true });
   } catch {
@@ -85,7 +85,7 @@ async function resolvePublicAddress(hostname: string): Promise<{ address: string
   }
   const selected = publicRecords[0];
   if (!selected || (selected.family !== 4 && selected.family !== 6)) throw new SafeHttpError("OUTBOUND_DNS_FAILED");
-  return { address: selected.address, family: selected.family };
+  return { address: selected.address, family: selected.family as 4 | 6 };
 }
 
 function boundedInteger(value: number | undefined, fallback: number, min: number, max: number, code: string): number {
