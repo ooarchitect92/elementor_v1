@@ -137,6 +137,7 @@ services:
       POSTGRES_HOST: postgres
       RABBITMQ_HOST: rabbitmq
       KAFKA_BROKERS: kafka:9092
+      WORKER_TENANT_IDS: ${WORKER_TENANT_IDS:?Set a bounded tenant assignment for the cell worker}
       SERVICE_NAME: forgestudio-outbox-worker
     read_only: true
     tmpfs: ["/tmp"]

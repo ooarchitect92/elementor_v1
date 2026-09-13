@@ -2,15 +2,14 @@ import { Router, type NextFunction, type Request, type Response } from "express"
 import { requireAuth } from "../../middlewares/auth.middleware.js";
 import { AppError } from "../../utils/app-error.js";
 import {
-  activateRelease,
   getActivePublishedSite,
   getEditorState,
   getRevision,
   listReleases,
   listRevisions,
-  publishCurrentRevision,
   saveEditorRevision,
 } from "./core.service.js";
+import { activateReleaseAsLatestIntent, createPublishJob } from "../jobs-v2/jobs.service.js";
 
 const router = Router();
 
@@ -63,10 +62,17 @@ router.get("/websites/:websiteId/revisions/:revision", async (req, res, next) =>
   } catch (error) { next(error); }
 });
 
+// Compatibility alias: all publication now enters the durable asynchronous job path.
 router.post("/websites/:websiteId/publish", async (req, res, next) => {
   try {
-    const release = await publishCurrentRevision(String(req.params.websiteId), userId(res), String(req.body?.requestKey || ""));
-    return res.status(release.duplicate ? 200 : 201).json({ success: true, release });
+    const requestKey = String(req.header("Idempotency-Key") || req.body?.requestKey || "");
+    const job = await createPublishJob(
+      String(req.params.websiteId), userId(res), requestKey, String(res.locals.requestId || ""),
+    );
+    res.setHeader("Deprecation", "true");
+    res.setHeader("Link", `</api/v2/websites/${req.params.websiteId}/publish-jobs>; rel=\"successor-version\"`);
+    res.setHeader("Location", `/api/v2/websites/${req.params.websiteId}/publish-jobs/${job.id}`);
+    return res.status(job.replayed ? 200 : 202).json({ success: true, job });
   } catch (error) { next(error); }
 });
 
@@ -76,8 +82,12 @@ router.get("/websites/:websiteId/releases", async (req, res, next) => {
 });
 
 router.post("/websites/:websiteId/releases/:releaseId/activate", async (req, res, next) => {
-  try { return res.json({ success: true, release: await activateRelease(String(req.params.websiteId), userId(res), String(req.params.releaseId)) }); }
-  catch (error) { next(error); }
+  try {
+    const release = await activateReleaseAsLatestIntent(
+      String(req.params.websiteId), userId(res), String(req.params.releaseId),
+    );
+    return res.json({ success: true, release });
+  } catch (error) { next(error); }
 });
 
 export default router;

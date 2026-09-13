@@ -41,15 +41,28 @@ CREATE TABLE IF NOT EXISTS site_releases (
   payload jsonb NOT NULL CHECK (jsonb_typeof(payload) = 'object'),
   status text NOT NULL CHECK (status IN ('VERIFIED','ACTIVE','RETIRED')),
   "createdBy" uuid NOT NULL REFERENCES users(id),
+  "requestAcceptedAt" timestamptz NOT NULL DEFAULT now(),
   "createdAt" timestamptz NOT NULL DEFAULT now(),
   "activatedAt" timestamptz,
   UNIQUE ("websiteId", "releaseNumber"),
   UNIQUE ("websiteId", "requestKey")
 );
+
+ALTER TABLE site_releases
+  ADD COLUMN IF NOT EXISTS "requestAcceptedAt" timestamptz;
+UPDATE site_releases
+SET "requestAcceptedAt"=COALESCE("activatedAt","createdAt",now())
+WHERE "requestAcceptedAt" IS NULL;
+ALTER TABLE site_releases
+  ALTER COLUMN "requestAcceptedAt" SET DEFAULT now(),
+  ALTER COLUMN "requestAcceptedAt" SET NOT NULL;
+
 CREATE UNIQUE INDEX IF NOT EXISTS site_releases_one_active_idx
   ON site_releases ("websiteId") WHERE status = 'ACTIVE';
 CREATE INDEX IF NOT EXISTS site_releases_history_idx
   ON site_releases ("websiteId", "releaseNumber" DESC);
+CREATE INDEX IF NOT EXISTS site_releases_intent_order_idx
+  ON site_releases ("websiteId", "requestAcceptedAt" DESC);
 
 CREATE TABLE IF NOT EXISTS wordpress_connections (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
