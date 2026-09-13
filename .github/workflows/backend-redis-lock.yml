@@ -23,6 +23,15 @@ jobs:
       - name: Add exact Redis runtime dependency
         working-directory: backend
         run: npm install --save-exact redis@5.12.1
+      - name: Normalize generated JSON files
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          for name in ('backend/package.json', 'backend/package-lock.json'):
+              path = Path(name)
+              text = path.read_text(encoding='utf-8').replace('\r\n', '\n').replace('\r', '\n')
+              path.write_text('\n'.join(line.rstrip() for line in text.split('\n')).rstrip() + '\n', encoding='utf-8')
+          PY
       - name: Verify generated backend lock and build
         working-directory: backend
         env:
