@@ -166,10 +166,17 @@ services:
     build: {context: ., dockerfile: infrastructure/docker/api.Dockerfile}
     depends_on:
       postgres: {condition: service_healthy}
+      redis-cache: {condition: service_healthy}
+      redis-control: {condition: service_healthy}
     env_file: ./backend/.env
     environment:
       NODE_ENV: development
       PORT: 5000
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Run npm run bootstrap}
+      REDIS_CACHE_HOST: redis-cache
+      REDIS_CACHE_PORT: 6379
+      REDIS_CONTROL_HOST: redis-control
+      REDIS_CONTROL_PORT: 6379
       ENABLE_LEGACY_SCHEDULER: "false"
     ports: ["127.0.0.1:5000:5000"]
     read_only: true
