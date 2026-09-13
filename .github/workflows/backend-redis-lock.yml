@@ -1,0 +1,45 @@
+name: Backend Redis dependency lock
+on:
+  push:
+    branches: [implementation/core-v1]
+    paths: [.github/workflows/backend-redis-lock.yml]
+permissions:
+  contents: write
+jobs:
+  lock:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: implementation/core-v1
+          fetch-depth: 1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - name: Add exact Redis runtime dependency
+        working-directory: backend
+        run: npm install --save-exact redis@5.12.1
+      - name: Verify generated backend lock and build
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql://localhost/forgestudio_build
+        run: |
+          npm ci --ignore-scripts
+          npm run db:generate
+          npm run build
+          npm audit --omit=dev --audit-level=critical
+      - name: Commit generated lock and remove bootstrap workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'ForgeStudio CI'
+          git config user.email 'actions@users.noreply.github.com'
+          git add backend/package.json backend/package-lock.json
+          git rm .github/workflows/backend-redis-lock.yml
+          git diff --cached --check
+          git commit -m 'chore(backend): add locked Redis runtime dependency'
+          git push origin HEAD:implementation/core-v1
