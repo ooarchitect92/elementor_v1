@@ -155,6 +155,7 @@ services:
     environment:
       POSTGRES_HOST: postgres
       RABBITMQ_HOST: rabbitmq
+      INTEGRATION_SECRET_KEY_BASE64: ${INTEGRATION_SECRET_KEY_BASE64:?Run npm run bootstrap}
       SERVICE_NAME: forgestudio-publish-worker
     read_only: true
     tmpfs: ["/tmp"]
@@ -177,6 +178,7 @@ services:
       REDIS_CACHE_PORT: 6379
       REDIS_CONTROL_HOST: redis-control
       REDIS_CONTROL_PORT: 6379
+      INTEGRATION_SECRET_KEY_BASE64: ${INTEGRATION_SECRET_KEY_BASE64:?Run npm run bootstrap}
       ENABLE_LEGACY_SCHEDULER: "false"
     ports: ["127.0.0.1:5000:5000"]
     read_only: true
