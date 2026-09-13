@@ -318,8 +318,12 @@ export function buildCompatibilityPassport(
     else totals.unsupported += finding.count;
   }
 
-  const unsupportedPenalty = Math.min(50, totals.unsupported * 15);
-  const manualPenalty = Math.min(30, totals.manual * 3);
+  // One unsupported business domain is a structural migration boundary, not a small warning.
+  // Subsequent unsupported domains add further risk but the score remains bounded and explainable.
+  const unsupportedPenalty = totals.unsupported === 0
+    ? 0
+    : Math.min(70, 35 + Math.max(0, totals.unsupported - 1) * 15);
+  const manualPenalty = Math.min(30, totals.manual * 4);
   const partialPenalty = Math.min(20, totals.partial);
   const score = Math.max(0, Math.min(100, 100 - unsupportedPenalty - manualPenalty - partialPenalty));
   return {
