@@ -1,18 +1,29 @@
 {
-  "version": 2,
-  "enabled": false,
+  "version": 3,
+  "enabled": true,
   "leaseRecoveryImplemented": true,
   "infrastructureRuntimes": [
     {
       "id": "tenant-outbox-relay",
       "entrypoint": "workers/outbox/main.ts",
       "status": "implemented",
-      "destinations": [
-        "rabbitmq",
-        "kafka"
-      ]
+      "destinations": ["rabbitmq", "kafka"]
     }
   ],
-  "handlers": [],
-  "reason": "Durable relay and lease recovery are implemented and integration-gated. Domain adapters remain disabled until each queue has provider-specific contract, failure and idempotency evidence."
+  "handlers": [
+    {
+      "queue": "publish.build",
+      "entrypoint": "workers/publish/main.ts",
+      "adapter": "forgestudio.database-release.v1",
+      "sideEffects": "idempotent",
+      "status": "implemented-and-integration-gated"
+    }
+  ],
+  "disabledQueues": [
+    "wordpress.sync",
+    "media.process",
+    "integration.deliver",
+    "maintenance.reconcile"
+  ],
+  "reason": "The database-backed publish adapter is enabled with durable lease, outbox and idempotent release evidence. Other domain adapters remain disabled until each has provider-specific failure and reconciliation evidence."
 }

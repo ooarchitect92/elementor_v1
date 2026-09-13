@@ -28,6 +28,7 @@ import {
   integrationRoutes
 } from "./routes/index.js";
 import coreV1Routes from "./modules/core-v1/core.routes.js";
+import jobsV2Routes from "./modules/jobs-v2/jobs.routes.js";
 import wordpressV2Routes from "./modules/wordpress/wordpress.routes.js";
 import { errorMiddleware } from "./middlewares/error.middleware.js";
 import { prisma } from "./config/prisma.js";
@@ -51,9 +52,8 @@ app.get("/api/v1/health", (_req: Request, res: Response) => {
   res.status(200).json({ success: true, message: "API is healthy" });
 });
 
-// v2 routes establish durable save/release contracts and secure connector integration.
-// Each router owns its authentication boundary; the core router exposes only its published-only path publicly.
 app.use("/api/v2", coreV1Routes);
+app.use("/api/v2", jobsV2Routes);
 app.use("/api/v2", wordpressV2Routes);
 
 app.use("/api/v1/auth", loginRoutes);
@@ -88,8 +88,6 @@ app.use("/api/v1/templates", templateRoutes);
 app.use("/api/templates", templateRoutes);
 app.use("/api/v1/plugins", pluginCompatRoutes);
 app.use("/api/plugins", pluginCompatRoutes);
-
-// These registries existed but were not mounted in the original server.
 app.use("/api/v1/forms", formRoutes);
 app.use("/api/forms", formRoutes);
 app.use("/api/v1/integrations", integrationRoutes);
