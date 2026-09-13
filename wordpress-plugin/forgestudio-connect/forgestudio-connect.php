@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: ForgeStudio Connect
- * Description: Secure read-only ForgeStudio pairing, capability discovery and source inventory. No WordPress write sync.
- * Version: 0.2.0
+ * Description: Secure read-only ForgeStudio pairing, capability discovery, source inventory and compatibility analysis. No WordPress write sync.
+ * Version: 0.3.0
  * Requires at least: 6.0
  * Requires PHP: 8.1
  * License: GPL-2.0-or-later
@@ -22,8 +22,7 @@ function forgestudio_connect_activate(): void {
 }
 
 function forgestudio_connect_deactivate(): void {
-    // Keep the role/capability so existing Application Password credentials fail predictably
-    // only when explicitly revoked by the WordPress administrator.
+    // Keep the read capability so Application Password credentials remain explicitly revocable.
 }
 
 register_activation_hook(__FILE__, 'forgestudio_connect_activate');
