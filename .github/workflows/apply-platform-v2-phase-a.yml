@@ -32,6 +32,20 @@ jobs:
           cat .bootstrap/platform-v2/part* | base64 --decode > /tmp/platform-v2-phase-a.tar.xz
           echo '07b88d4c4d473fdf86e2bbde02075291f1ee33e2438fcd53d4c49e6fdd22356e  /tmp/platform-v2-phase-a.tar.xz' | sha256sum --check --strict
           tar -xJf /tmp/platform-v2-phase-a.tar.xz
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('packages/platform/object-store.ts')
+          source = path.read_text()
+          old = '    const normalized = [...headers.entries()].map(([name, value]) => [name.toLowerCase(), value.trim().replace(/\\s+/g, " ")] as const).sort(([a], [b]) => a.localeCompare(b));'
+          new = '''    const headerPairs: Array<readonly [string, string]> = [];
+              headers.forEach((value, name) => {
+                headerPairs.push([name.toLowerCase(), value.trim().replace(/\\s+/g, " ")] as const);
+              });
+              const normalized = headerPairs.sort(([a], [b]) => a.localeCompare(b));'''
+          if old not in source:
+              raise SystemExit('Expected Headers.entries implementation was not found')
+          path.write_text(source.replace(old, new))
+          PY
           test -f packages/platform/object-store.ts
           test -f packages/renderer/incremental-compiler.ts
           test -f packages/wordpress/compatibility.ts
