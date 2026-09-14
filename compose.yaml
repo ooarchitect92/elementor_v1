@@ -10,6 +10,8 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./infrastructure/postgres/001_platform.sql:/docker-entrypoint-initdb.d/001_platform.sql:ro
+      - ./infrastructure/postgres/002_runtime.sql:/docker-entrypoint-initdb.d/002_runtime.sql:ro
+      - ./infrastructure/postgres/003_job_resources.sql:/docker-entrypoint-initdb.d/003_job_resources.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s
@@ -122,15 +124,61 @@ services:
       interval: 10s
       timeout: 5s
       retries: 30
+  outbox-worker:
+    profiles: ["workers"]
+    build: {context: ., dockerfile: infrastructure/docker/worker.Dockerfile}
+    command: ["node", "--experimental-strip-types", "workers/outbox/main.ts"]
+    depends_on:
+      postgres: {condition: service_healthy}
+      rabbitmq: {condition: service_healthy}
+      kafka: {condition: service_healthy}
+    env_file: ./.env
+    environment:
+      POSTGRES_HOST: postgres
+      RABBITMQ_HOST: rabbitmq
+      KAFKA_BROKERS: kafka:9092
+      WORKER_TENANT_IDS: ${WORKER_TENANT_IDS:?Set a bounded tenant assignment for the cell worker}
+      SERVICE_NAME: forgestudio-outbox-worker
+    read_only: true
+    tmpfs: ["/tmp"]
+    init: true
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+  publish-worker:
+    profiles: ["workers"]
+    build: {context: ., dockerfile: infrastructure/docker/worker.Dockerfile}
+    command: ["node", "--experimental-strip-types", "workers/publish/main.ts"]
+    depends_on:
+      postgres: {condition: service_healthy}
+      rabbitmq: {condition: service_healthy}
+    env_file: ./.env
+    environment:
+      POSTGRES_HOST: postgres
+      RABBITMQ_HOST: rabbitmq
+      INTEGRATION_SECRET_KEY_BASE64: ${INTEGRATION_SECRET_KEY_BASE64:?Run npm run bootstrap}
+      SERVICE_NAME: forgestudio-publish-worker
+    read_only: true
+    tmpfs: ["/tmp"]
+    init: true
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
   api:
     profiles: ["legacy-app"]
     build: {context: ., dockerfile: infrastructure/docker/api.Dockerfile}
     depends_on:
       postgres: {condition: service_healthy}
+      redis-cache: {condition: service_healthy}
+      redis-control: {condition: service_healthy}
     env_file: ./backend/.env
     environment:
       NODE_ENV: development
       PORT: 5000
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Run npm run bootstrap}
+      REDIS_CACHE_HOST: redis-cache
+      REDIS_CACHE_PORT: 6379
+      REDIS_CONTROL_HOST: redis-control
+      REDIS_CONTROL_PORT: 6379
+      INTEGRATION_SECRET_KEY_BASE64: ${INTEGRATION_SECRET_KEY_BASE64:?Run npm run bootstrap}
       ENABLE_LEGACY_SCHEDULER: "false"
     ports: ["127.0.0.1:5000:5000"]
     read_only: true

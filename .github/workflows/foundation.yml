@@ -1,7 +1,7 @@
 name: Foundation gates
 on:
   push:
-    branches: [main, 'foundation/**', 'feat/**', 'fix/**']
+    branches: [main, 'foundation/**', 'implementation/**', 'feat/**', 'fix/**']
   pull_request:
   workflow_dispatch:
 permissions:
@@ -23,23 +23,31 @@ jobs:
       - run: npm run inventory
   infrastructure:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
+    env:
+      WORKER_TENANT_IDS: 11111111-1111-4111-8111-111111111111
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
-        with: {node-version: '22'}
+        with: {node-version: '22', cache: npm}
+      - run: npm ci --ignore-scripts
       - run: npm run bootstrap
-      - run: docker compose --profile analytics --profile wordpress config --quiet
-      - run: docker compose up -d --wait postgres redis-cache redis-control rabbitmq
-      - run: npm run infra:init && npm run infra:smoke
+      - run: docker compose --profile analytics --profile wordpress --profile workers config --quiet
+      - run: docker compose --profile analytics --profile workers build outbox-worker publish-worker
+      - run: docker compose --profile analytics up -d --wait postgres redis-cache redis-control rabbitmq kafka
+      - run: npm run infra:init -- --kafka
+      - run: npm run infra:smoke -- --kafka
+      - run: npm run backend-redis:smoke
+      - run: npm run core:smoke
+      - run: npm run runtime:smoke
+      - run: npm run publish:smoke
       - name: Diagnostic logs on failure
         if: failure()
-        run: docker compose logs --tail=80 postgres redis-cache redis-control rabbitmq
+        run: docker compose --profile analytics --profile workers logs --tail=200 postgres redis-cache redis-control rabbitmq kafka outbox-worker publish-worker || true
       - name: Remove disposable CI fixtures
         if: always()
-        run: docker compose down -v
+        run: docker compose --profile analytics --profile workers down -v || true
   legacy-baseline:
-    # Informational until F01 certifies the existing dependency/schema baseline.
     runs-on: ubuntu-latest
     timeout-minutes: 15
     continue-on-error: true
@@ -55,7 +63,6 @@ jobs:
       - if: matrix.app == 'backend'
         run: npm run db:generate
         working-directory: backend
-        env:
-          DATABASE_URL: postgresql://localhost/forgestudio_build
+        env: {DATABASE_URL: postgresql://localhost/forgestudio_build}
       - run: npm run build
         working-directory: ${{ matrix.app }}

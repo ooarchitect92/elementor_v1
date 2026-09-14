@@ -1,7 +1,30 @@
 {
-  "version": 1,
-  "enabled": false,
-  "leaseRecoveryImplemented": false,
-  "handlers": [],
-  "reason": "Foundation ports only; domain workers and reconciliation must pass integration gates before activation."
+  "version": 4,
+  "enabled": true,
+  "leaseRecoveryImplemented": true,
+  "infrastructureRuntimes": [
+    {
+      "id": "tenant-outbox-relay",
+      "entrypoint": "workers/outbox/main.ts",
+      "status": "implemented",
+      "destinations": ["rabbitmq", "kafka"]
+    }
+  ],
+  "handlers": [
+    {
+      "queue": "publish.build",
+      "entrypoint": "workers/publish/main.ts",
+      "adapter": "forgestudio.database-release.v2",
+      "sideEffects": "idempotent",
+      "status": "implemented-and-integration-gated",
+      "privateConfig": "aes-256-gcm-release-bound"
+    }
+  ],
+  "disabledQueues": [
+    "wordpress.sync",
+    "media.process",
+    "integration.deliver",
+    "maintenance.reconcile"
+  ],
+  "reason": "The publish adapter is enabled with durable leases, immutable inputs, public/private release separation, encrypted private form configuration, outbox delivery, idempotent replay and supersession fencing. Other domain adapters remain disabled until each has provider-specific failure and reconciliation evidence."
 }

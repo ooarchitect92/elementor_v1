@@ -1,176 +1,75 @@
+import crypto from "node:crypto";
 import type { Request, Response, NextFunction } from "express";
 import {
   getUserWebsites,
   getWebsiteById,
   createWebsite,
-  updateWebsiteEditorData,
   deleteWebsite,
 } from "../services/website.service.js";
+import { getEditorState, saveEditorRevision } from "../modules/core-v1/core.service.js";
 
-/**
- * GET /api/websites
- * Fetch all websites for current authenticated user
- */
-export async function getWebsitesHandler(
-  _req: Request,
-  res: Response,
-  next: NextFunction
-) {
+export async function getWebsitesHandler(_req: Request, res: Response, next: NextFunction) {
   try {
-    const user = res.locals.user;
-    const websites = await getUserWebsites(user.id);
+    const websites = await getUserWebsites(res.locals.user.id);
+    return res.status(200).json({ success: true, websites });
+  } catch (error) { next(error); }
+}
 
-    return res.status(200).json({
-      success: true,
-      websites,
-    });
-  } catch (error) {
-    next(error);
-  }
+export async function getWebsiteByIdHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const website = await getWebsiteById(req.params.id as string, res.locals.user.id);
+    return res.status(200).json({ success: true, website });
+  } catch (error) { next(error); }
+}
+
+export async function createWebsiteHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const website = await createWebsite(res.locals.user.id, req.body.name);
+    return res.status(201).json({ success: true, message: "Website created successfully", website });
+  } catch (error) { next(error); }
 }
 
 /**
- * GET /api/websites/:id
- * Get single website details and editor JSON data
+ * Legacy PUT compatibility path. It now participates in the same revision transaction as
+ * autosave, so a manual Save can never mutate editor state outside the durable ledger.
  */
-export async function getWebsiteByIdHandler(
-  req: Request,
-  res: Response,
-  next: NextFunction
-) {
+export async function updateWebsiteHandler(req: Request, res: Response, next: NextFunction) {
   try {
-    const user = res.locals.user;
+    const userId = res.locals.user.id;
     const websiteId = req.params.id as string;
-
-    const website = await getWebsiteById(websiteId, user.id);
-
-    return res.status(200).json({
-      success: true,
-      website,
+    const state = await getEditorState(websiteId, userId);
+    const save = await saveEditorRevision(websiteId, userId, {
+      expectedRevision: Number(state.currentRevision),
+      requestKey: `legacy:${websiteId}:${crypto.randomUUID()}`,
+      editorData: req.body?.editorData || {},
+      performanceSettings: req.body?.performanceSettings,
     });
-  } catch (error) {
-    next(error);
-  }
+    const website = await getWebsiteById(websiteId, userId);
+    return res.status(200).json({ success: true, message: "Website saved successfully", website, save });
+  } catch (error) { next(error); }
 }
 
-/**
- * POST /api/websites
- * Create a new website with subscription limit validation
- */
-export async function createWebsiteHandler(
-  req: Request,
-  res: Response,
-  next: NextFunction
-) {
+export async function deleteWebsiteHandler(req: Request, res: Response, next: NextFunction) {
   try {
-    const user = res.locals.user;
-    const { name } = req.body;
-
-    const website = await createWebsite(user.id, name);
-
-    return res.status(201).json({
-      success: true,
-      message: "Website created successfully",
-      website,
-    });
-  } catch (error) {
-    next(error);
-  }
+    await deleteWebsite(req.params.id as string, res.locals.user.id);
+    return res.status(200).json({ success: true, message: "Website deleted successfully" });
+  } catch (error) { next(error); }
 }
 
-/**
- * PUT /api/websites/:id
- * Save updated editor JSON data
- */
-export async function updateWebsiteHandler(
-  req: Request,
-  res: Response,
-  next: NextFunction
-) {
+export async function getWebsiteRolesHandler(req: Request, res: Response, next: NextFunction) {
   try {
-    const user = res.locals.user;
-    const websiteId = req.params.id as string;
-    const { editorData, performanceSettings } = req.body;
-
-    const website = await updateWebsiteEditorData(websiteId, user.id, editorData, performanceSettings);
-
-    return res.status(200).json({
-      success: true,
-      message: "Website saved successfully",
-      website,
-    });
-  } catch (error) {
-    next(error);
-  }
-}
-
-/**
- * DELETE /api/websites/:id
- * Delete a user's website
- */
-export async function deleteWebsiteHandler(
-  req: Request,
-  res: Response,
-  next: NextFunction
-) {
-  try {
-    const user = res.locals.user;
-    const websiteId = req.params.id as string;
-
-    await deleteWebsite(websiteId, user.id);
-
-    return res.status(200).json({
-      success: true,
-      message: "Website deleted successfully",
-    });
-  } catch (error) {
-    next(error);
-  }
-}
-
-export async function getWebsiteRolesHandler(
-  req: Request,
-  res: Response,
-  next: NextFunction
-) {
-  try {
-    const user = res.locals.user;
-    const websiteId = req.params.id as string;
-
-    // Using default service to import
     const { getWebsiteRoles } = await import("../services/website.service.js");
-    const roles = await getWebsiteRoles(websiteId, user.id);
-
-    return res.status(200).json({
-      success: true,
-      roles,
-    });
-  } catch (error) {
-    next(error);
-  }
+    const roles = await getWebsiteRoles(req.params.id as string, res.locals.user.id);
+    return res.status(200).json({ success: true, roles });
+  } catch (error) { next(error); }
 }
 
-export async function updateWebsiteRoleHandler(
-  req: Request,
-  res: Response,
-  next: NextFunction
-) {
+export async function updateWebsiteRoleHandler(req: Request, res: Response, next: NextFunction) {
   try {
-    const user = res.locals.user;
-    const websiteId = req.params.id as string;
-    const collaboratorUserId = req.params.collaboratorUserId as string;
-    const { role } = req.body;
-
     const { updateWebsiteRole } = await import("../services/website.service.js");
-    const result = await updateWebsiteRole(websiteId, user.id, collaboratorUserId, role);
-
-    return res.status(200).json({
-      success: true,
-      message: "Role updated successfully",
-    });
-  } catch (error) {
-    next(error);
-  }
+    await updateWebsiteRole(req.params.id as string, res.locals.user.id, req.params.collaboratorUserId as string, req.body.role);
+    return res.status(200).json({ success: true, message: "Role updated successfully" });
+  } catch (error) { next(error); }
 }
 
 export async function inviteWebsiteMemberHandler(req: Request, res: Response, next: NextFunction) {
@@ -184,9 +83,8 @@ export async function inviteWebsiteMemberHandler(req: Request, res: Response, ne
 
 export async function acceptWebsiteInvitationHandler(req: Request, res: Response, next: NextFunction) {
   try {
-    const { token } = req.body;
     const { acceptWebsiteInvitation } = await import("../services/website.service.js");
-    const result = await acceptWebsiteInvitation(token, res.locals.user.id);
+    const result = await acceptWebsiteInvitation(req.body.token, res.locals.user.id);
     return res.status(200).json({ ...result, success: true });
   } catch (error) { next(error); }
 }
